@@ -591,7 +591,7 @@ VIEWS.settings = () => {
   <section class="card stack"><h2>App</h2>
     <label class="f">Appearance<select id="theme" data-act-change="theme"><option value="system" ${theme === 'system' ? 'selected' : ''}>Match phone / computer</option><option value="light" ${theme === 'light' ? 'selected' : ''}>Light</option><option value="dark" ${theme === 'dark' ? 'selected' : ''}>Dark</option></select></label>
     <div class="row"><button class="btn sm" data-act="export">Download backup</button><label class="btn sm" for="importfile">Restore from a file</label><input type="file" id="importfile" accept="application/json,.json" hidden data-act-change="import">
-    ${Drive.isConnected() ? '<button class="btn sm" data-act="backupnow">Back up to Drive now</button><button class="btn sm" data-act="drivebackups">Restore a Drive backup</button>' : ''}
+    ${Drive.isConnected() ? `${store.meta.syncMode === 'owner' ? '<button class="btn sm" data-act="backupnow">Back up to Drive now</button>' : ''}<button class="btn sm" data-act="drivebackups">Restore a Drive backup</button>` : ''}
     ${store.projects.some(p => p.sample && !p.deleted) ? '' : '<button class="btn sm" data-act="samples">Add the 3 starter quotes</button>'}</div>
     <div class="muted" style="font-size:12px">VishwaaFX Quote Desk v${APP_VERSION}</div>
   </section>`;

@@ -224,6 +224,7 @@ const Drive = (() => {
   /* Automatic backup at 9 PM (device time): the first sync after 21:00 makes today's backup;
      if the app was not opened after 9 PM, the next sync catches up for the day before. */
   async function dailyBackup(me, blob) {
+    if (state.mode !== 'owner') return; // only the studio account makes backups, so it owns them
     const day = new Date().getHours() >= 21 ? todayStr() : addDays(todayStr(), -1);
     const key = 'vfxq.backup9pm.' + me.email;
     if (ls.get(key) === day) return;
@@ -236,6 +237,7 @@ const Drive = (() => {
   }
   async function backupNow(store) {
     const me = await whoAmI();
+    if (owner() && me.email !== owner()) throw new Error(`backups are made by ${owner()} so the studio account owns them. Open the app with that account to back up now`);
     const blob = new Blob([JSON.stringify({ ...store, meta: undefined, savedAt: nowISO(), savedBy: me.email, app: APP_VERSION })], { type: 'application/json' });
     return writeBackup(me, blob, 'manual');
   }
