@@ -64,6 +64,7 @@ function render(resetScroll = false) {
     <datalist id="descs">${allDescriptions(store).map(d => `<option value="${esc(d)}">`).join('')}</datalist>`;
   window.scrollTo(0, resetScroll ? 0 : y);
   refresh();
+  if (route.name === 'settings') showShared();
 }
 
 function syncPill() {
@@ -72,7 +73,8 @@ function syncPill() {
     off: ['off', 'Reconnect Drive'], err: ['off', 'Sync failed'], offline: ['local', 'Offline · saved']
   };
   const [cls, label] = map[syncState] || map.local;
-  return `<button class="sync ${cls}" data-act="syncpill" title="Google Drive sync"><i></i>${label}</button>`;
+  const who = Drive.user()?.email;
+  return `<button class="sync ${cls}" data-act="syncpill" title="Google Drive sync${who ? ' · ' + esc(who) : ''}"><i></i>${label}</button>`;
 }
 function setSync(s) { syncState = s; const el = document.querySelector('.sync'); if (el) el.outerHTML = syncPill(); }
 
@@ -503,6 +505,25 @@ TABS.pdf = p => {
 };
 
 /* ---------- settings ---------- */
+function driveCard() {
+  const who = Drive.user()?.email || store.meta.syncAccount || '';
+  const ownerEmail = Drive.owner();
+  const mode = store.meta.syncMode;
+  const last = store.meta.lastSync ? new Date(store.meta.lastSync).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  let box;
+  if (Drive.needsUpgrade()) box = `<div class="warnbox">Tap <b>Reconnect</b> once so this account can use the shared studio data.</div>`;
+  else if (mode === 'owner') box = `<div class="okbox">Studio data account: <b>${esc(who)}</b>. Quotes, PDFs and the 9 PM daily backup are in “${Drive.FOLDER}” in this Drive.${last ? ' Last sync ' + last + '.' : ''}</div>`;
+  else if (mode === 'shared') box = `<div class="okbox">Signed in as <b>${esc(who)}</b>, using the shared studio data from <b>${esc(ownerEmail)}</b>.${last ? ' Last sync ' + last + '.' : ''}</div>`;
+  else if (mode === 'private') box = `<div class="warnbox">Signed in as <b>${esc(who)}</b>, but the studio folder from <b>${esc(ownerEmail)}</b> is not shared with this account yet, so this is a separate copy. Open the app with ${esc(ownerEmail)} and use “Share studio data” below, then tap Sync now here.</div>`;
+  else box = `<div class="okbox">Connected${who ? ' as <b>' + esc(who) + '</b>' : ''}.${last ? ' Last sync ' + last + '.' : ''}</div>`;
+  const share = mode === 'owner' ? `<div class="blk"><b>Share studio data</b>
+      <div class="muted" style="font-size:12.5px">Give another Google account the same quotes. They get edit access to the “${Drive.FOLDER}” folder.</div>
+      <div class="row"><input type="email" id="sharemail" class="grow" placeholder="name@gmail.com" value="dicksonpjo@gmail.com" aria-label="Email to share with"><button class="btn" data-act="share">Share</button></div>
+      <div class="muted" style="font-size:12px" id="sharedlist"></div></div>` : '';
+  return `${box}
+    <div class="row"><button class="btn primary" data-act="syncnow">Sync now</button><button class="btn" data-act="reauth">${Drive.needsUpgrade() ? 'Reconnect (needed)' : 'Switch account / Reconnect'}</button><button class="btn danger" data-act="disconnect">Disconnect</button></div>
+    ${share}`;
+}
 VIEWS.settings = () => {
   const s = store.settings; const c = s.company;
   const connected = Drive.isConnected();
@@ -515,8 +536,7 @@ VIEWS.settings = () => {
   const body = `
   <section class="card stack"><h2>Google Drive</h2>
     ${IN_ARTIFACT ? `<div class="infobox">This is the preview copy. Drive sync works in the installed app, once it's hosted at your own address (see the setup guide).</div>` : ''}
-    ${connected ? `<div class="okbox">Connected. Data and PDFs are saved in the “${Drive.FOLDER}” folder in your Drive.${store.meta.lastSync ? ' Last sync ' + new Date(store.meta.lastSync).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) + '.' : ''}</div>
-      <div class="row"><button class="btn primary" data-act="syncnow">Sync now</button><button class="btn" data-act="reauth">Reconnect</button><button class="btn danger" data-act="disconnect">Disconnect</button></div>`
+    ${connected ? driveCard() 
       : `<div class="muted" style="font-size:13px">Everything is saved on this device. Connect Google Drive to sync across phone and computer and keep PDFs and daily backups in Drive.</div>
       <label class="f">Google OAuth Client ID<input type="text" id="cid" value="${esc(Drive.clientId())}" placeholder="xxxxxxxx.apps.googleusercontent.com"></label>
       <div class="f" style="font-size:12px">Authorised redirect URI and JavaScript origin<div class="codebox">${esc(Drive.redirectUri())}</div></div>
@@ -570,7 +590,8 @@ VIEWS.settings = () => {
   </section>
   <section class="card stack"><h2>App</h2>
     <label class="f">Appearance<select id="theme" data-act-change="theme"><option value="system" ${theme === 'system' ? 'selected' : ''}>Match phone / computer</option><option value="light" ${theme === 'light' ? 'selected' : ''}>Light</option><option value="dark" ${theme === 'dark' ? 'selected' : ''}>Dark</option></select></label>
-    <div class="row"><button class="btn sm" data-act="export">Download backup</button><label class="btn sm" for="importfile">Restore backup</label><input type="file" id="importfile" accept="application/json,.json" hidden data-act-change="import">
+    <div class="row"><button class="btn sm" data-act="export">Download backup</button><label class="btn sm" for="importfile">Restore from a file</label><input type="file" id="importfile" accept="application/json,.json" hidden data-act-change="import">
+    ${Drive.isConnected() ? '<button class="btn sm" data-act="backupnow">Back up to Drive now</button><button class="btn sm" data-act="drivebackups">Restore a Drive backup</button>' : ''}
     ${store.projects.some(p => p.sample && !p.deleted) ? '' : '<button class="btn sm" data-act="samples">Add the 3 starter quotes</button>'}</div>
     <div class="muted" style="font-size:12px">VishwaaFX Quote Desk v${APP_VERSION}</div>
   </section>`;
@@ -851,10 +872,75 @@ document.addEventListener('change', async e => {
     try {
       const data = JSON.parse(await el.files[0].text());
       if (!data.projects || !data.settings) throw new Error('Not a Quote Desk backup');
-      store = mergeStores(store, data); saveLocal(store); scheduleSync(); render(); toast(`Backup restored · ${data.projects.length} quotes merged.`);
+      askRestore(data, el.files[0].name); el.value = '';
     } catch (err) { toast('Could not read that file: ' + err.message); }
   }
 });
+/* ---------- restore ---------- */
+let pendingRestore = null;
+function askRestore(data, label) {
+  pendingRestore = data;
+  const live = data.projects.filter(p => !p.deleted);
+  const saved = data.savedAt ? new Date(data.savedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  openSheet(`<h2>Restore this backup?</h2>
+    <div class="muted" style="font-size:13px">${esc(label)}${saved ? ' · saved ' + saved : ''} · ${live.length} quotes and bills</div>
+    <div class="stack">
+      <button class="btn primary block" data-act="restore" data-v="replace">Replace everything with this backup</button>
+      <div class="muted" style="font-size:12px;margin-top:-4px">Every device and account switches to exactly this data. Quotes added after the backup are removed.</div>
+      <button class="btn block" data-act="restore" data-v="add">Only add quotes that are missing</button>
+      <button class="btn block ghost" data-act="closesheet">Cancel</button></div>`);
+}
+ACT.restore = el => {
+  const data = pendingRestore; if (!data) return; pendingRestore = null; closeSheet();
+  const now = nowISO();
+  if (el.dataset.v === 'replace') {
+    const keep = new Set(data.projects.map(p => p.id));
+    const restored = clone(data.projects).map(p => ({ ...p, updatedAt: now }));
+    const removed = store.projects.filter(p => !keep.has(p.id)).map(p => ({ ...p, deleted: true, updatedAt: now }));
+    store = { schema: 1, settings: { ...defaultSettings(), ...clone(data.settings), updatedAt: now }, projects: [...restored, ...removed], meta: store.meta };
+    toast(`Restored · ${restored.filter(p => !p.deleted).length} quotes. Syncing to every device…`, 3500);
+  } else {
+    const have = new Set(store.projects.map(p => p.id));
+    const added = clone(data.projects).filter(p => !have.has(p.id) && !p.deleted).map(p => ({ ...p, updatedAt: now }));
+    store.projects.push(...added);
+    toast(added.length ? `Added ${added.length} missing quote${added.length > 1 ? 's' : ''}.` : 'Nothing was missing.');
+  }
+  saveLocal(store); render(); runSync();
+};
+function backupLabel(n) {
+  const m = n.match(/^v(\d+)_(\d{4}-\d{2}-\d{2})_(\d{2})(\d{2})_(auto|manual)/);
+  if (m) return `Version ${+m[1]} · ${fmtDate(m[2])} ${m[3]}:${m[4]} · ${m[5] === 'auto' ? 'automatic' : 'manual'}`;
+  return n.replace(/\.json$/, '');
+}
+ACT.drivebackups = async () => {
+  if (!Drive.token()) return toast('Reconnect Google Drive first.');
+  openSheet(`<h2>Drive backups</h2><div class="muted">Loading…</div>`);
+  try {
+    const files = await Drive.listBackups();
+    openSheet(`<h2>Drive backups</h2><div class="muted" style="font-size:12.5px">Folder “${Drive.BACKUP_FOLDER}” in Drive. A new version is saved every day at 9 PM, and whenever you tap Back up now.</div>
+      <div>${files.length ? files.map(f => `<div class="list-row" data-act="pickbackup" data-v="${f.id}" data-n="${esc(f.name)}"><div class="grow"><b>${esc(backupLabel(f.name))}</b><small>Saved ${new Date(f.modifiedTime).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</small></div><span class="chev">›</span></div>`).join('') : '<div class="muted">No backups yet.</div>'}</div>
+      <button class="btn ghost" data-act="closesheet">Close</button>`);
+  } catch (e) { openSheet(`<h2>Drive backups</h2><div class="warnbox">${esc(e.message)}</div><button class="btn ghost" data-act="closesheet">Close</button>`); }
+};
+ACT.backupnow = async () => {
+  if (!Drive.token()) return toast('Reconnect Google Drive first.');
+  try { toast('Backing up…'); const name = await Drive.backupNow(store); toast(`Saved ${name} in “${Drive.BACKUP_FOLDER}”.`, 4000); }
+  catch (e) { toast('Backup failed: ' + e.message, 4000); }
+};
+ACT.pickbackup = async el => {
+  try { const data = await Drive.readFile(el.dataset.v); if (!data.projects) throw new Error('Not a Quote Desk backup'); askRestore(data, el.dataset.n); }
+  catch (e) { toast('Could not open that backup: ' + e.message, 4000); }
+};
+ACT.share = async () => {
+  const email = document.getElementById('sharemail').value.trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return toast('Enter a valid email address.');
+  try { await Drive.shareWith(email); toast(`Shared with ${email}. Open the app there and tap Sync now.`, 4000); showShared(); }
+  catch (e) { toast('Sharing failed: ' + e.message, 4000); }
+};
+async function showShared() {
+  const el = document.getElementById('sharedlist'); if (!el) return;
+  try { const l = await Drive.sharedWith(); el.textContent = l.length ? 'Shared with: ' + l.join(', ') : 'Not shared with anyone yet.'; } catch { el.textContent = ''; }
+}
 function shrinkImage(file, maxW, grey = false) {
   return new Promise((res, rej) => {
     const img = new Image(); img.onload = () => {
@@ -957,18 +1043,19 @@ function scheduleSync(delay = 2500) {
 async function runSync(manual = false) {
   if (!Drive.isConnected()) { setSync('local'); return; }
   if (!navigator.onLine) { setSync('offline'); return; }
-  if (!Drive.token()) { setSync('off'); if (manual) Drive.authorize(); return; }
+  if (!Drive.token() || Drive.needsUpgrade()) { setSync('off'); if (manual) Drive.authorize(); return; }
   if (syncing) { scheduleSync(1500); return; }
   syncing = true; setSync('busy');
   try {
     const before = JSON.stringify(store.projects);
     const merged = await Drive.sync(store);
     store = merged; saveLocal(store); setSync('ok');
-    if (JSON.stringify(store.projects) !== before && ['home', 'settings'].includes(route.name)) render();
+    if (JSON.stringify(store.projects) !== before && ['home', 'start', 'settings'].includes(route.name)) render();
+    else if (route.name === 'settings') render();
     if (manual) toast('Synced with Google Drive.');
   } catch (e) {
     console.warn(e); setSync(e.code === 'AUTH' ? 'off' : 'err');
-    if (manual) toast(e.code === 'AUTH' ? 'Drive session expired. Tap “Reconnect Drive”.' : 'Sync failed: ' + e.message, 4000);
+    if (manual) toast(e.code === 'AUTH' ? e.message + '. Tap “Reconnect Drive”.' : 'Sync failed: ' + e.message, 4000);
   } finally { syncing = false; }
 }
 window.addEventListener('online', () => runSync());
@@ -987,7 +1074,7 @@ function boot() {
   if (!store) { store = emptyStore(); sampleProjects(store); saveLocal(store); }
   try { const r = JSON.parse(sessionStorage.getItem('vfxq.route') || 'null'); if (r && VIEWS[r.name]) { route = r; if (r.kind) ui.kind = r.kind; } } catch {}
   try { history.replaceState(route, ''); } catch {}
-  syncState = Drive.isConnected() ? (Drive.token() ? 'busy' : 'off') : 'local';
+  syncState = Drive.isConnected() ? (Drive.token() && !Drive.needsUpgrade() ? 'busy' : 'off') : 'local';
   render(true);
   if (msg === 'connected') { toast('Google Drive connected. Syncing…'); runSync(); }
   else if (msg === 'reconnect') { setSync('off'); }

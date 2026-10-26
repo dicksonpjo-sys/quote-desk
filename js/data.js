@@ -1,7 +1,7 @@
 /* VishwaaFX Quote Desk — data model, defaults, calculations */
 'use strict';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const STORE_KEY = 'vfxq.data.v2';
 
 const uid = (p = 'id') => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);

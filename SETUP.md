@@ -46,16 +46,19 @@ and then install it on your phone, iPad, PC and Mac like a normal app. Total set
    - **iPhone / iPad (Safari):** Share → **Add to Home Screen**.
    - **Windows / Mac (Chrome or Edge):** the install icon at the right of the address bar.
 
-## What ends up in your Drive
+## What ends up in your Drive (studio account vishwaafx@gmail.com)
 
 ```
 My Drive / VishwaaFX Quotes /
-  vishwaafx_quotes_data.json     all quotes and settings (synced between devices)
-  Backups / backup_YYYY-MM-DD.json  one copy per day
+  vishwaafx_quotes_data.json     all quotes and settings (one file shared by every account and device)
   PDF / VFX-26-27-002 Law and Order / VFX-26-27-002 Law and Order.pdf
+My Drive / VishwaaFX Quotes Backups /
+  2026-10 / v0001_2026-10-26_2100_auto.json     automatic, every day at 9 PM
+            v0002_2026-10-26_1530_manual.json   "Back up to Drive now"
 ```
 
-The app can only see files it created itself. It cannot read anything else in your Drive.
+Other Google accounts (for example dicksonpjo@gmail.com) see the same data once the studio
+account shares it with them: open the app as vishwaafx@gmail.com → Settings → Share studio data.
 
 ## Good to know
 
