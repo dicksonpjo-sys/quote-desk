@@ -5,8 +5,10 @@ Copy everything below the line into a new Studio Console chat.
 ---
 
 Read the Studio Console build log first (studio-console-buildlog). Tell me the last SHIPPED version,
-anything PLANNED, and the parked items. Then plan this as the **next version, one purpose: show
-Quote Desk money per project (read-only)**. Write its PLANNED block in the log before any code.
+anything PLANNED, and the parked items. **The live Studio Console is v5.17** (Dickson, 23 Nov 2026):
+build on the confirmed-working v5.17 file. Plan this as **v5.18, one purpose: show Quote Desk money
+per project (read-only)**. If the log already has a v5.18 planned for something else, tell me and
+use the next free number. Write its PLANNED block in the log before any code.
 
 **What exists now (Quote Desk v1.4.0, live 23 Nov 2026)**
 Quote Desk keeps a summary file for Studio Console:
