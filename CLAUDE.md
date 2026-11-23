@@ -173,7 +173,7 @@ Run it after any change to `js/sync.js`, `mergeStores` or restore.
   bank numbers and sample quotes taken out of the public code.
 - **v1.4.0 — Studio Console link + Versions + Clearer quote screen** (the planned 1.4, 1.5 and 1.6,
   combined at Dickson's request). Index format final: `docs/STUDIO_CONSOLE_INDEX.md`; one Studio project
-  ID per quote, every bill listed under it; options report the approved one only. Next: write the
-  Studio Console prompt from that format.
+  ID per quote, every bill listed under it; options report the approved one only. Studio Console
+  prompt written: `docs/STUDIO_CONSOLE_PROMPT.md` (paste into a Studio Console chat; built there).
 - **Later ideas:** Malayalam in PDFs (embedded Unicode font), VFX Edit Tool Kit CSV import, private repo
   (needs GitHub Pro to keep Pages).
