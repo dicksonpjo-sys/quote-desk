@@ -137,6 +137,7 @@ Run it after any change to `js/sync.js`, `mergeStores` or restore.
   vishwaafxacc → push 1.3.0 → as vishwaafxacc: Move studio data here → share with dicksonpjo and vishwaafx.
   Rollback: set `VFXQ_DATA_OWNER` back to vishwaafx, empty `VFXQ_PREVIOUS_OWNERS`, rename the
   `moved_to_…` file back to `vishwaafx_quotes_data.json`.
+  The PDF letterhead keeps vishwaafx@gmail.com as the studio email (Dickson's choice, 23 Nov 2026).
 - **v1.4.0 — Studio Console link.** Read-only `quote_desk_index.json` next to the data file (quote no.,
   kind, project, client, category, created/quote/valid-till dates, status, total, received, due,
   updated, PDF link; no bank details). Optional Studio project ID on each quote. Studio Console runs
