@@ -70,3 +70,23 @@ account shares it with them: open the app as vishwaafx@gmail.com → Settings �
   version the next time the app is opened online.
 - **Malayalam or other non-Latin text** is not supported inside the PDF yet (it shows as `?`).
   English text, ₹ and Indian number format are fully supported.
+
+## Working on the app with Claude Code
+
+Claude Code reads `CLAUDE.md` automatically, so every new session starts with the full picture.
+
+**In the cloud (any device, nothing to install):** open https://claude.ai/code, pick the
+`dicksonpjo-sys/quote-desk` repository, and start a session. Changes come back as commits you approve.
+
+**On your own computer (also lets you test the app offline):**
+1. Install Git: https://git-scm.com/downloads
+2. Install Claude Code, either the Claude desktop app (https://claude.com/download) or the terminal version:
+   - Windows PowerShell: `irm https://claude.ai/install.ps1 | iex`
+   - Mac: `curl -fsSL https://claude.ai/install.sh | bash`
+3. Get the code: `git clone https://github.com/dicksonpjo-sys/quote-desk.git`
+4. Open the `quote-desk` folder in the Claude desktop app (Code tab), or run `claude` inside it.
+5. Run the app locally: `python -m http.server 8080`, then open http://localhost:8080.
+   Drive sync on localhost needs `http://localhost:8080` added to the Google OAuth client (see CLAUDE.md).
+
+Claude itself needs the internet. Offline you can still use the installed app, run it locally
+and edit files; push the changes when you are back online.
