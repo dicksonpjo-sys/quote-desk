@@ -6,7 +6,7 @@ must not break, and how to test and ship a change.
 - **Owner:** Dickson P Jo (VishwaaFX, Kochi). Talks in short messages; wants to see what you are
   doing as you do it, and to approve anything that changes live data or goes live.
 - **Live app:** https://dicksonpjo-sys.github.io/quote-desk/ (GitHub Pages, `main` branch, root folder)
-- **Current version:** v1.2.1 (`APP_VERSION` in `js/data.js`)
+- **Current version:** v1.2.2 (`APP_VERSION` in `js/data.js`)
 - **User guide:** `docs/FEATURES.md` · **Hosting and Google setup:** `SETUP.md` · **History:** `docs/CHANGELOG.md`
 
 ## What it is

@@ -45,6 +45,8 @@ eq('quote no 2', A.quoteNo(st, q2), 'VFX/26-27/002');
 eq('supervision own sequence', A.quoteNo(st, s1), 'SUP/26-27/001');
 eq('restart in April', A.quoteNo(st, q3), 'VFX/27-28/001');
 q2.rev = 1; eq('revision suffix', A.quoteNo(st, q2), 'VFX/26-27/002-R1');
+q2.deleted = true; const q4 = mk('2026-07-01', tplQ);
+eq('deleted number is never reused', A.quoteNo(st, q4), 'VFX/26-27/003');
 
 // Totals, discounts, screen time
 const sec = A.newSection('');

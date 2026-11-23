@@ -1,4 +1,4 @@
-# VishwaaFX Quote Desk — what it does (v1.2.1)
+# VishwaaFX Quote Desk — what it does (v1.2.2)
 
 Live app: https://dicksonpjo-sys.github.io/quote-desk/
 

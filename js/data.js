@@ -1,7 +1,7 @@
 /* VishwaaFX Quote Desk — data model, defaults, calculations */
 'use strict';
 
-const APP_VERSION = '1.2.1';
+const APP_VERSION = '1.2.2';
 const STORE_KEY = 'vfxq.data.v2';
 
 const uid = (p = 'id') => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -230,9 +230,10 @@ function createProject(store, { name, category, client, templateId, date }) {
   return p;
 }
 
+/* Deleted quotes still count, so a number that may have gone to a client is never given out again. */
 function nextSeq(store, fy, kind = 'quote') {
   let max = 0;
-  for (const p of store.projects) if (p.fy === fy && !p.deleted && kindOf(p) === kind) max = Math.max(max, p.seq || 0);
+  for (const p of store.projects) if (p.fy === fy && kindOf(p) === kind) max = Math.max(max, p.seq || 0);
   return max + 1;
 }
 function quoteNo(store, p, withRev = true) {
