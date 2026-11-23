@@ -30,6 +30,9 @@ function persist() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { saveLocal(store); scheduleSync(); }, 400);
 }
+/* View only accounts (v1.3.1): quotes open and PDFs preview, nothing can be changed. */
+const readOnly = () => Drive.isConnected() && store.meta.syncMode === 'view';
+const VIEW_OK = new Set(['back', 'cat', 'closesheet', 'closeviewer', 'confirmok', 'connect', 'disconnect', 'drivebackups', 'export', 'kind', 'open', 'pdf', 'allpages', 'reauth', 'sharepdf', 'syncnow', 'syncpill', 'tab']);
 function touchP(p) { p.updatedAt = nowISO(); persist(); }
 function touchS() { store.settings.updatedAt = nowISO(); persist(); }
 
@@ -63,6 +66,8 @@ function render(resetScroll = false) {
     ${v.bottom || ''}${v.fab || ''}
     <datalist id="descs">${allDescriptions(store).map(d => `<option value="${esc(d)}">`).join('')}</datalist>`;
   window.scrollTo(0, resetScroll ? 0 : y);
+  document.body.classList.toggle('readonly', readOnly());
+  if (readOnly()) document.querySelectorAll('main [data-bind], main [data-draft]').forEach(f => { f.disabled = true; });
   refresh();
   if (route.name === 'settings') showShared();
 }
@@ -131,6 +136,7 @@ function target(path) {
   return null;
 }
 function applyBind(el) {
+  if (readOnly()) return;
   const t = target(el.dataset.bind); if (!t || !t.obj) return;
   let v = el.type === 'checkbox' ? el.checked : el.value;
   if (el.dataset.lines !== undefined) v = String(v).split('\n').map(x => x.trim()).filter(Boolean);
@@ -154,6 +160,7 @@ document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
   const fn = ACT[el.dataset.act]; if (!fn) return;
   if (el.tagName !== 'INPUT') e.preventDefault();
+  if (readOnly() && !VIEW_OK.has(el.dataset.act) && !(el.dataset.act === 'go' && el.dataset.r !== 'new')) return toast(`View only access. Ask ${Drive.owner()} for Editor access to change quotes.`, 3500);
   fn(el, e);
 });
 
@@ -516,13 +523,17 @@ function driveCard() {
   else if (mode === 'move') box = `<div class="warnbox stack"><div><b>${esc(who)}</b> is the new studio data account. The quotes are still in the old account's Drive. Tap <b>Move studio data here</b> to copy the quotes, every backup and every PDF into this account. Nothing is deleted; the old folder stays as an archive.</div>${moveBtn('Move studio data here')}</div>`;
   else if (mode === 'owner' && Drive.state.moveSource) box = `<div class="warnbox stack"><div>Some files from the old account were not copied yet. Tap to finish the move; files already copied are skipped.</div>${moveBtn('Finish the move')}</div>`;
   else if (mode === 'owner') box = `<div class="okbox">Studio data account: <b>${esc(who)}</b>. Quotes, PDFs and the 9 PM daily backup are in “${Drive.FOLDER}” in this Drive.${last ? ' Last sync ' + last + '.' : ''}</div>`;
-  else if (mode === 'shared') box = `<div class="okbox">Signed in as <b>${esc(who)}</b>, using the shared studio data from <b>${esc(ownerEmail)}</b>.${last ? ' Last sync ' + last + '.' : ''}</div>`;
-  else if (mode === 'private') box = `<div class="warnbox">Signed in as <b>${esc(who)}</b>, but the studio folder from <b>${esc(ownerEmail)}</b> is not shared with this account yet, so this is a separate copy. Open the app with ${esc(ownerEmail)} and use “Share studio data” below, then tap Sync now here.</div>`;
+  else if (mode === 'shared') box = `<div class="okbox">Signed in as <b>${esc(who)}</b>. Studio data is owned by <b>${esc(ownerEmail)}</b> · you have <b>Editor</b> access.${last ? ' Last sync ' + last + '.' : ''}</div>`;
+  else if (mode === 'view') box = `<div class="okbox">Signed in as <b>${esc(who)}</b>. Studio data is owned by <b>${esc(ownerEmail)}</b> · you have <b>View only</b> access, so quotes cannot be changed on this account.${last ? ' Last sync ' + last + '.' : ''}</div>`;
+  else if (mode === 'noaccess' || mode === 'private') box = `<div class="warnbox">Signed in as <b>${esc(who)}</b>. Studio data is owned by <b>${esc(ownerEmail)}</b>, and this account has not been given access yet. Nothing is saved to Drive from here. Ask ${esc(ownerEmail)} to add <b>${esc(who)}</b> in Settings → Who has access, then tap Sync now.</div>`;
   else box = `<div class="okbox">Connected${who ? ' as <b>' + esc(who) + '</b>' : ''}.${last ? ' Last sync ' + last + '.' : ''}</div>`;
-  const share = mode === 'owner' ? `<div class="blk"><b>Share studio data</b>
-      <div class="muted" style="font-size:12.5px">Give another Google account the same quotes. They get edit access to the “${Drive.FOLDER}” folder.</div>
-      <div class="row"><input type="email" id="sharemail" class="grow" placeholder="name@gmail.com" aria-label="Email to share with"><button class="btn" data-act="share">Share</button></div>
-      <div class="muted" style="font-size:12px" id="sharedlist"></div></div>` : '';
+  const share = mode === 'owner' ? `<div class="blk stack" id="access"><b>Who has access</b>
+      <div class="muted" style="font-size:12.5px">Accounts that can open the studio data: the “${Drive.FOLDER}” folder (quotes and PDFs) and the “${Drive.BACKUP_FOLDER}” folder. Add and Remove change both.</div>
+      <div id="accesslist"><div class="muted" style="font-size:13px">Loading…</div></div>
+      <label class="f">Add an account<input type="email" id="sharemail" placeholder="name@gmail.com" autocomplete="off"></label>
+      <div class="row"><select id="sharerole" aria-label="Access" class="grow"><option value="writer">Editor</option><option value="reader">View only</option></select>
+        <button class="btn primary" data-act="share">Add</button></div>
+      <div class="infobox" style="font-size:12.5px">A new account must first be added as a test user in Google Cloud (Google Auth Platform → Audience → Test users), or Google will not let it sign in.</div></div>` : '';
   return `${box}
     <div class="row"><button class="btn primary" data-act="syncnow">Sync now</button><button class="btn" data-act="reauth">${Drive.needsUpgrade() ? 'Reconnect (needed)' : 'Switch account / Reconnect'}</button><button class="btn danger" data-act="disconnect">Disconnect</button></div>
     ${share}`;
@@ -934,11 +945,25 @@ ACT.pickbackup = async el => {
   try { const data = await Drive.readFile(el.dataset.v); if (!data.projects) throw new Error('Not a Quote Desk backup'); askRestore(data, el.dataset.n); }
   catch (e) { toast('Could not open that backup: ' + e.message, 4000); }
 };
+const ROLE_LABEL = { owner: 'Owner', writer: 'Editor', reader: 'View only', commenter: 'View only' };
 ACT.share = async () => {
-  const email = document.getElementById('sharemail').value.trim();
+  const email = document.getElementById('sharemail').value.trim().toLowerCase();
+  const role = document.getElementById('sharerole')?.value || 'writer';
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return toast('Enter a valid email address.');
-  try { await Drive.shareWith(email); toast(`Shared with ${email}. Open the app there and tap Sync now.`, 4000); showShared(); }
-  catch (e) { toast('Sharing failed: ' + e.message, 4000); }
+  if (!Drive.token()) return toast('Reconnect Google Drive first.');
+  try {
+    toast('Adding…');
+    await Drive.grant(email, role);
+    document.getElementById('sharemail').value = '';
+    toast(`${email} added as ${ROLE_LABEL[role]}. Open the app with that account and tap Sync now.`, 4500); showShared();
+  } catch (e) { toast('Could not add: ' + e.message, 4500); }
+};
+ACT.unshare = el => {
+  const email = el.dataset.v;
+  confirmBox(`Remove ${email}?`, `This account loses access to the “${Drive.FOLDER}” folder and the “${Drive.BACKUP_FOLDER}” folder. Quotes already on its phone stay there but stop syncing.`, 'Remove', async () => {
+    try { toast('Removing…'); await Drive.revoke(email); toast(`${email} removed from both folders.`, 3500); showShared(); }
+    catch (e) { toast('Could not remove: ' + e.message, 4500); }
+  });
 };
 ACT.movedata = () => confirmBox('Move studio data to this account?',
   'Make sure the old account has done “Back up to Drive now” and has shared its studio data with this account. The quotes, backups and PDFs are copied here; the old folder is kept as an archive.',
@@ -951,15 +976,22 @@ ACT.movedata = () => confirmBox('Move studio data to this account?',
       openSheet(`<h2>${r.renamed ? 'Move complete' : 'Move almost complete'}</h2><div class="stack">
         <div class="${r.renamed ? 'okbox' : 'warnbox'}">${r.quotes} quotes are now in this account.<br>${r.copied} files copied${r.already ? `, ${r.already} already here` : ''} (backups and PDFs) from ${esc(r.from)}.
         ${r.failed.length ? `<br><b>${r.failed.length} could not be copied:</b> ${esc(r.failed.slice(0, 5).join(', '))}${r.failed.length > 5 ? '…' : ''}. Tap “Finish the move” in Settings to try again.` : ''}</div>
-        <div class="muted" style="font-size:13px">Next: “Share studio data” below with the other accounts, then tap Sync now on the other phones.</div>
+        <div class="muted" style="font-size:13px">Next: add the other accounts under “Who has access” below, then tap Sync now on the other phones.</div>
         <button class="btn primary" data-act="closesheet">Done</button></div>`);
     } catch (e) { setSync('err'); toast('Move failed: ' + e.message, 6000); }
     finally { syncing = false; }
     scheduleSync(500);
   }, false);
 async function showShared() {
-  const el = document.getElementById('sharedlist'); if (!el) return;
-  try { const l = await Drive.sharedWith(); el.textContent = l.length ? 'Shared with: ' + l.join(', ') : 'Not shared with anyone yet.'; } catch { el.textContent = ''; }
+  const el = document.getElementById('accesslist'); if (!el || !Drive.token()) return;
+  try {
+    const l = await Drive.access();
+    const label = p => p.type === 'anyone' ? 'Anyone with the link' : p.type === 'domain' ? 'Everyone in a domain' : p.email;
+    el.innerHTML = l.map(p => `<div class="list-row" style="cursor:default"><div class="grow"><b style="word-break:break-all">${esc(label(p))}</b>
+      <small>${ROLE_LABEL[p.role] || esc(p.role)}${p.partial && p.role !== 'owner' ? ` · only on the ${p.roles.studio ? 'studio' : 'backups'} folder` : ''}</small></div>
+      ${p.role === 'owner' ? '' : `<button class="btn danger sm" data-act="unshare" data-v="${esc(p.email)}">Remove</button>`}</div>`).join('')
+      + (l.length <= 1 ? '<div class="muted" style="font-size:13px">Not shared with anyone yet.</div>' : '');
+  } catch (e) { el.innerHTML = `<div class="warnbox" style="font-size:13px">Could not read the access list: ${esc(e.message)}</div>`; }
 }
 function shrinkImage(file, maxW, grey = false) {
   return new Promise((res, rej) => {
@@ -1067,10 +1099,11 @@ async function runSync(manual = false) {
   if (syncing) { scheduleSync(1500); return; }
   syncing = true; setSync('busy');
   try {
-    const before = JSON.stringify(store.projects);
+    const before = JSON.stringify(store.projects); const modeBefore = store.meta.syncMode;
     const merged = await Drive.sync(store);
     store = merged; saveLocal(store); setSync('ok');
-    if (JSON.stringify(store.projects) !== before && ['home', 'start', 'settings'].includes(route.name)) render();
+    if (store.meta.syncMode !== modeBefore) render();
+    else if (JSON.stringify(store.projects) !== before && ['home', 'start', 'settings'].includes(route.name)) render();
     else if (route.name === 'settings') render();
     if (manual) toast('Synced with Google Drive.');
   } catch (e) {

@@ -58,7 +58,8 @@ My Drive / VishwaaFX Quotes Backups /
 ```
 
 Other Google accounts (for example dicksonpjo@gmail.com) see the same data once the studio
-account shares it with them: open the app as vishwaafx@gmail.com → Settings → Share studio data.
+account adds them: open the app as vishwaafxacc@gmail.com → Settings → Who has access → Add.
+Add the account as a test user in Google Cloud first (Google Auth Platform → Audience → Test users).
 
 ## Good to know
 

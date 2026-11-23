@@ -6,7 +6,10 @@ must not break, and how to test and ship a change.
 - **Owner:** Dickson P Jo (VishwaaFX, Kochi). Talks in short messages; wants to see what you are
   doing as you do it, and to approve anything that changes live data or goes live.
 - **Live app:** https://dicksonpjo-sys.github.io/quote-desk/ (GitHub Pages, `main` branch, root folder)
-- **Current version:** v1.3.0 (`APP_VERSION` in `js/data.js`)
+- **Current version:** v1.3.1 (`APP_VERSION` in `js/data.js`)
+- **Accounts:** studio data owner **vishwaafxacc@gmail.com**; extra users **vishwaafx@gmail.com** and
+  **dicksonpjo@gmail.com** (both Editor). Dickson dictates by voice, so emails can arrive misspelt
+  ("visualfx", "dixonpjo"); these three are the real ones.
 - **User guide:** `docs/FEATURES.md` · **Hosting and Google setup:** `SETUP.md` · **History:** `docs/CHANGELOG.md`
 
 ## What it is
@@ -61,9 +64,15 @@ Line    = { id, desc, type: 'rate'|'lump', sec, rate, amount, date }   // date u
 
 - **One studio file:** `vishwaafx_quotes_data.json` in `My Drive/VishwaaFX Quotes/` of **vishwaafxacc@gmail.com**
   (since v1.3.0; before that vishwaafx@gmail.com, whose folders remain as an archive).
-  Any other account (vishwaafx, dicksonpjo) uses the same file once the folder is shared with it
-  (Settings → Share studio data). A separate copy found in another account is merged in once and
-  renamed `merged_<date>_…`.
+  Any other account (vishwaafx, dicksonpjo) uses the same file once the owner adds it in
+  Settings → Who has access (Editor → mode `shared`, View only → mode `view`: download only, editing
+  off). An account with no access is in mode `noaccess`: it works on the phone only and **never
+  creates a data file or folder in its own Drive** (v1.3.1; before that it made a private copy).
+  An old separate copy owned by the signed-in account is merged in once and renamed `merged_<date>_…`.
+- **Access manager (v1.3.1):** `Drive.access()`, `grant(email, 'writer'|'reader')`, `revoke(email)`,
+  owner only. Grant and revoke always act on BOTH the studio folder and the backups folder; revoke
+  re-reads both to verify. Google Cloud test users cannot be added through the API, so the UI says to
+  add them by hand (Google Auth Platform → Audience → Test users).
 - **Merge, never overwrite blindly:** `mergeStores` keeps the newest `updatedAt` per project and per
   settings. Every edit must call `touchP(p)` or `touchS()` so its timestamp moves. Deletes are soft
   (`deleted: true`) so they sync.
@@ -71,14 +80,16 @@ Line    = { id, desc, type: 'rate'|'lump', sec, rate, amount, date }   // date u
   `VFXQ_PREVIOUS_OWNERS` account does, the owner is in `move` mode (reads the old file, writes nothing,
   no backups) and everyone else keeps using the old file. `Drive.moveHere()` copies the data file, the
   studio folder (PDFs) and the backups folder, verifies, then renames the old file `moved_to_<user>_…`.
-  It can be re-run: files already copied are skipped.
+  It can be re-run: files already copied are skipped. Once a `moved_to_…` file from a previous owner
+  exists the move counts as done: any later `vishwaafx_quotes_data.json` owned by a previous owner is a
+  late copy, merged in and renamed `merged_…` by the owner, never shown as "not copied yet".
 - **Restore = re-stamp:** "Replace everything" stamps restored records with now and soft-deletes the
   rest; otherwise the newer Drive copy would win the next merge (the bug fixed in v1.2).
 - **Backups:** only the studio account writes them, into `My Drive/VishwaaFX Quotes Backups/<YYYY-MM>/`
   as `v0001_<date>_<HHMM>_<auto|manual>.json`. Automatic one: first sync after 9 PM, or a catch-up
   on the next open.
 - **Scope:** `https://www.googleapis.com/auth/drive`. The Google Cloud project is in **Testing** mode;
-  only listed test users can sign in (vishwaafx@gmail.com, dicksonpjo@gmail.com, vishwaafxacc@gmail.com once added).
+  only listed test users can sign in (vishwaafx@gmail.com, dicksonpjo@gmail.com, vishwaafxacc@gmail.com).
   A blocked account comes back with `error=access_denied`; the app explains it.
 - Token lasts one hour; the app refreshes it with a silent redirect. No secrets live in the repo:
   the OAuth Client ID is public by design.
@@ -107,7 +118,8 @@ In the Claude Code cloud container: Node Playwright is pre-installed. For the Py
 
 `tests/drive_sim_test.py` fakes Google Drive and checks: private copy → owner file → sharing →
 merge of the stray copy → backups visible to both → "Replace everything" restore → PDF save →
-9 PM backups across devices → owner move from vishwaafx to vishwaafxacc (three accounts).
+9 PM backups across devices → owner move from vishwaafx to vishwaafxacc (three accounts) →
+old owner opening before it has access → access manager (add, change role, view only, remove from both folders).
 Set `SHOTS=<folder>` to save screenshots of the move screens.
 Run it after any change to `js/sync.js`, `mergeStores` or restore.
 
@@ -132,12 +144,17 @@ Run it after any change to `js/sync.js`, `mergeStores` or restore.
 
 ## Roadmap agreed 23 Nov 2026 (one purpose per version)
 
-- **v1.3.0 — Move studio data to vishwaafxacc@gmail.com.** Built and tested. Go-live order: Dickson adds
-  vishwaafxacc as test user → as vishwaafx: Back up now + Download backup + Share studio data with
-  vishwaafxacc → push 1.3.0 → as vishwaafxacc: Move studio data here → share with dicksonpjo and vishwaafx.
-  Rollback: set `VFXQ_DATA_OWNER` back to vishwaafx, empty `VFXQ_PREVIOUS_OWNERS`, rename the
+- **v1.3.0 — Move studio data to vishwaafxacc@gmail.com. DONE, live 23 Nov 2026.** The move ran as
+  vishwaafxacc: 12 quotes, 29 backups/PDFs copied; the old vishwaafx data file was renamed
+  `moved_to_vishwaafxacc_2026-11-23_…`. A second `moved_to_…` file in the old folder comes from
+  vishwaafx opening v1.3.0 before it had access (it made a new copy, which "Finish the move" then
+  merged and renamed). Old vishwaafx folders are kept as an archive.
+  Rollback (only if ever needed): set `VFXQ_DATA_OWNER` back to vishwaafx, empty `VFXQ_PREVIOUS_OWNERS`, rename the
   `moved_to_…` file back to `vishwaafx_quotes_data.json`.
   The PDF letterhead keeps vishwaafx@gmail.com as the studio email (Dickson's choice, 23 Nov 2026).
+- **v1.3.1 — Access manager.** Settings → Who has access (owner only): list, Add (Editor / View only),
+  Remove from both folders; read-only ownership line for other accounts; View only mode; fix for the
+  old owner making a new data file after the move. Tests in `tests/drive_sim_test.py` ("ACCESS TEST").
 - **v1.4.0 — Studio Console link.** Read-only `quote_desk_index.json` next to the data file (quote no.,
   kind, project, client, category, created/quote/valid-till dates, status, total, received, due,
   updated, PDF link; no bank details). Optional Studio project ID on each quote. Studio Console runs

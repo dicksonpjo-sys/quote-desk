@@ -30,7 +30,7 @@ const Drive = (() => {
   /* Tokens from the first version only had access to the app's own files. */
   const needsUpgrade = () => { const t = tokenRec(); return isConnected() && !!t && !String(t.scope || '').split(' ').includes(SCOPE); };
   const user = () => ls.get(K.who);
-  const state = { mode: 'unknown', ownerEmail: owner(), moveSource: null }; // 'owner' | 'move' | 'shared' | 'private'
+  const state = { mode: 'unknown', ownerEmail: owner(), moveSource: null }; // 'owner' | 'move' | 'shared' | 'view' | 'noaccess'
 
   function setClientId(id) { ls.set(K.client, (id || '').trim()); }
 
@@ -104,7 +104,7 @@ const Drive = (() => {
   function cache(email) { const all = ls.get(K.ids) || {}; return all[email] || {}; }
   function saveCache(email, c) { const all = ls.get(K.ids) || {}; all[email] = c; ls.set(K.ids, all); }
 
-  async function list(query, fields = 'files(id,name,modifiedTime,createdTime,ownedByMe,owners(emailAddress),parents,mimeType)') {
+  async function list(query, fields = 'files(id,name,modifiedTime,createdTime,ownedByMe,owners(emailAddress),parents,mimeType,capabilities(canEdit))') {
     let out = [], page = '';
     do { // follow every page: a month of backups or a PDF folder can hold more than one page
       const r = await json(`${API}/files?q=${encodeURIComponent(query)}&fields=${encodeURIComponent('nextPageToken,' + fields)}&orderBy=createdTime&pageSize=200&supportsAllDrives=true&includeItemsFromAllDrives=true${page ? '&pageToken=' + encodeURIComponent(page) : ''}`);
@@ -135,7 +135,10 @@ const Drive = (() => {
   }
   const ownerOf = f => String(f.owners?.[0]?.emailAddress || '').toLowerCase();
 
-  /* Work out which data file is THE studio file, and merge any strays into it. */
+  /* Work out which data file is THE studio file, and merge any strays into it.
+     Since v1.3.1 an account without access to the studio data never makes its own copy
+     ('noaccess': works on the phone only, writes nothing to Drive) and a View only account
+     only reads ('view'). */
   async function locate(me) {
     const c = cache(me.email);
     const files = await list(`name='${DATA_FILE}' and trashed=false`);
@@ -143,26 +146,38 @@ const Drive = (() => {
     if (owner()) primary = files.find(f => ownerOf(f) === owner()) || null;
     const iAmOwner = !owner() || me.email === owner();
     // The studio file still sitting with a previous owner (not moved yet).
-    const source = files.find(f => previousOwners().includes(ownerOf(f))) || null;
+    let source = files.find(f => previousOwners().includes(ownerOf(f))) || null;
+    let lateCopy = null;
+    if (primary && source) {
+      // The move already finished (a moved_to_ file exists): this is a late copy an old-owner device
+      // made afterwards (v1.3.0 did that when the account had no access yet). Merge it, do not re-move.
+      const moved = await list(`name contains 'moved_to_' and trashed=false`);
+      if (moved.some(f => previousOwners().includes(ownerOf(f)) && f.name.endsWith(DATA_FILE))) { lateCopy = source; source = null; }
+    }
     let moving = false;
     if (!primary && source) { primary = source; moving = iAmOwner; } // until the move, everyone keeps using the old file
-    if (!primary) primary = files.find(f => f.ownedByMe) || files[0] || null;
+    if (!primary && iAmOwner) primary = files.find(f => f.ownedByMe) || null;
     state.moveSource = iAmOwner ? source : null;
-    state.mode = moving ? 'move' : iAmOwner ? 'owner' : (primary && (ownerOf(primary) === owner() || primary === source) ? 'shared' : 'private');
-    if (c.mode !== state.mode) { // switched between a private copy and the shared studio data: forget old folder ids
+    const canEdit = !primary || primary.capabilities?.canEdit !== false;
+    state.mode = moving ? 'move' : iAmOwner ? 'owner' : !primary ? 'noaccess' : canEdit ? 'shared' : 'view';
+    if (c.mode !== state.mode) { // switched between modes: forget old folder ids
       for (const k of Object.keys(c)) if (k === 'backupRoot' || k.startsWith('m:') || k.startsWith('f:')) delete c[k];
       c.mode = state.mode;
     }
     // Folder that holds the data file is the root for PDFs and backups.
     if (primary) { c.data = primary.id; c.root = primary.parents?.[0] || c.root; }
+    else if (state.mode === 'noaccess') { delete c.data; delete c.root; }
     else {
-      let root = (await list(`name='${FOLDER}' and mimeType='${FOLDER_MIME}' and trashed=false and 'root' in parents`))[0];
+      let root = (await list(`name='${FOLDER}' and mimeType='${FOLDER_MIME}' and trashed=false and 'root' in parents`)).find(f => f.ownedByMe);
       c.root = root ? root.id : await createFolder(FOLDER);
       delete c.data;
     }
     saveCache(me.email, c);
-    // Other copies this account can edit (e.g. the second account's old private file).
-    const strays = primary ? files.filter(f => f.id !== primary.id && f.ownedByMe) : [];
+    // Other copies this account can edit (e.g. the second account's old private file), and for the
+    // owner the late old-owner copy. Read-only modes never touch them.
+    let strays = [];
+    if (primary && (state.mode === 'owner' || state.mode === 'shared')) strays = files.filter(f => f.id !== primary.id && f.ownedByMe);
+    if (lateCopy && state.mode === 'owner' && !strays.includes(lateCopy)) strays.push(lateCopy);
     return { c, primary, strays, source };
   }
 
@@ -176,8 +191,12 @@ const Drive = (() => {
       const remote = await json(`${API}/files/${primary.id}?alt=media&supportsAllDrives=true`);
       merged = mergeStores(store, remote);
     }
-    if (state.mode === 'move') { // new owner before "Move": read the old studio file, write nothing
-      merged.meta = { ...(store.meta || {}), lastSync: nowISO(), syncAccount: me.email, syncMode: 'move', syncFile: null, remoteModified: null };
+    if (state.mode === 'move' || state.mode === 'noaccess') { // read what we can, write nothing
+      merged.meta = { ...(store.meta || {}), lastSync: nowISO(), syncAccount: me.email, syncMode: state.mode, syncFile: null, remoteModified: null };
+      return merged;
+    }
+    if (state.mode === 'view') { // View only: download, never upload
+      merged.meta = { ...(store.meta || {}), lastSync: nowISO(), syncAccount: me.email, syncMode: 'view', syncFile: primary.id, remoteModified: primary.modifiedTime };
       return merged;
     }
     if (source && source.id !== primary?.id) { // move started but not finished: keep reading the old file
@@ -185,10 +204,11 @@ const Drive = (() => {
     }
     for (const f of strays) { // fold an old separate copy in, then retire it
       try {
-        const other = await json(`${API}/files/${f.id}?alt=media`);
+        const other = await json(`${API}/files/${f.id}?alt=media&supportsAllDrives=true`);
         merged = mergeStores(merged, other);
         await json(`${API}/files/${f.id}?fields=id`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: `merged_${todayStr()}_${DATA_FILE}` }) });
+        if (f.id === state.moveSource?.id) state.moveSource = null;
       } catch (e) { console.warn('stray merge', e); }
     }
     merged.meta = { ...(store.meta || {}) };
@@ -282,6 +302,7 @@ const Drive = (() => {
   async function backupRoot(me) {
     const c = cache(me.email);
     if (c.backupRoot) return c.backupRoot;
+    if (state.mode === 'noaccess') return null;
     const found = await list(`name='${BACKUP_FOLDER}' and mimeType='${FOLDER_MIME}' and trashed=false`);
     let f = found.find(x => owner() && ownerOf(x) === owner()) || found.find(x => previousOwners().includes(ownerOf(x))) || found.find(x => x.ownedByMe) || null;
     if (!f && state.mode !== 'owner') return null; // only the studio account creates the backups folder
@@ -358,30 +379,79 @@ const Drive = (() => {
   async function readFile(id) { return json(`${API}/files/${id}?alt=media&supportsAllDrives=true`); }
 
   async function savePdf(fileName, folderName, bytes) {
-    const me = await whoAmI(); if (!cache(me.email).root) await locate(me);
+    const me = await whoAmI(); if (!cache(me.email).root || state.mode === 'unknown') await locate(me);
+    if (state.mode === 'noaccess') throw new Error(`this account has no access to the studio data yet. Ask ${owner()} to add it`);
+    if (state.mode === 'view') throw new Error('this account has View only access, so it cannot save to Drive');
     const parent = await subFolder(me, ['PDF', folderName]);
     const blob = new Blob([bytes], { type: 'application/pdf' });
     const ex = await findChild(fileName, parent);
     return ex ? overwrite(ex.id, blob, 'application/pdf') : uploadNew(fileName, parent, blob, 'application/pdf');
   }
 
-  /* Owner only: give another Google account edit access to the studio folder. */
-  async function shareWith(email) {
-    const me = await whoAmI(); const c = cache(me.email.toLowerCase());
-    if (!c.root) await locate(me);
-    const ids = [cache(me.email).root, await backupRoot(me)];
-    for (const id of ids) await json(`${API}/files/${id}/permissions?sendNotificationEmail=false&supportsAllDrives=true&fields=id`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'user', role: 'writer', emailAddress: email })
-    });
+  /* ---------- Access manager (owner only, v1.3.1) ----------
+     Every account sits on two folders: the studio folder (data file + PDFs) and the backups folder.
+     Add and Remove always act on both, so an account never keeps half its access. */
+  const keyOf = p => p.type === 'user' || p.type === 'group' ? String(p.emailAddress || '').toLowerCase() : p.type;
+  async function accessFolders() {
+    const me = await whoAmI();
+    if (state.mode === 'unknown') await locate(me);
+    if (state.mode !== 'owner') throw new Error(`only ${owner() || 'the studio account'} can manage access`);
+    if (!cache(me.email).root) await locate(me);
+    const out = [{ key: 'studio', id: cache(me.email).root }];
+    const bk = await backupRoot(me); if (bk) out.push({ key: 'backups', id: bk });
+    return { me, folders: out };
+  }
+  async function perms(id) {
+    const r = await json(`${API}/files/${id}/permissions?fields=${encodeURIComponent('permissions(id,type,role,emailAddress,displayName)')}&supportsAllDrives=true`);
+    return r.permissions || [];
+  }
+  /* [{ email, name, type, role: 'owner'|'writer'|'reader'|…, partial: true when on only one of the two folders }] */
+  async function access() {
+    const { folders } = await accessFolders();
+    const people = {};
+    for (const f of folders) for (const p of await perms(f.id)) {
+      const k = keyOf(p); const e = people[k] || (people[k] = { email: k, name: p.displayName || '', type: p.type, roles: {} });
+      e.roles[f.key] = p.role;
+    }
+    return Object.values(people).map(e => ({
+      email: e.email, name: e.name, type: e.type, roles: e.roles,
+      role: e.roles.studio || e.roles.backups, partial: folders.some(f => !e.roles[f.key])
+    })).sort((a, b) => (b.role === 'owner') - (a.role === 'owner') || a.email.localeCompare(b.email));
+  }
+  async function grant(email, role = 'writer') {
+    email = String(email || '').trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('enter a valid email address');
+    if (!['writer', 'reader'].includes(role)) throw new Error('unknown access level');
+    const { me, folders } = await accessFolders();
+    if (email === me.email) throw new Error('this account owns the studio data already');
+    for (const f of folders) {
+      const ex = (await perms(f.id)).find(p => keyOf(p) === email);
+      if (ex?.role === 'owner') throw new Error(`${email} owns this folder`);
+      if (ex && ex.role === role) continue;
+      if (ex) await json(`${API}/files/${f.id}/permissions/${ex.id}?supportsAllDrives=true&fields=id`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }) });
+      else await json(`${API}/files/${f.id}/permissions?sendNotificationEmail=false&supportsAllDrives=true&fields=id`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'user', role, emailAddress: email }) });
+    }
     return true;
   }
-  async function sharedWith() {
-    const me = await whoAmI(); const root = cache(me.email).root; if (!root) return [];
-    const r = await json(`${API}/files/${root}/permissions?fields=permissions(emailAddress,role)&supportsAllDrives=true`);
-    return (r.permissions || []).filter(p => p.role !== 'owner').map(p => p.emailAddress);
+  const shareWith = email => grant(email, 'writer');
+  /* Takes the account off the studio folder AND the backups folder, then checks both. */
+  async function revoke(email) {
+    email = String(email || '').trim().toLowerCase();
+    const { me, folders } = await accessFolders();
+    if (email === me.email) throw new Error('the studio account cannot remove itself');
+    for (const f of folders) {
+      const ex = (await perms(f.id)).find(p => keyOf(p) === email);
+      if (!ex) continue;
+      if (ex.role === 'owner') throw new Error(`${email} owns this folder`);
+      await api(`${API}/files/${f.id}/permissions/${ex.id}?supportsAllDrives=true`, { method: 'DELETE' });
+    }
+    for (const f of folders) if ((await perms(f.id)).some(p => keyOf(p) === email)) throw new Error(`${email} still has access to the ${f.key} folder. Try again`);
+    return true;
   }
+  async function sharedWith() { return (await access()).filter(p => p.role !== 'owner').map(p => p.email); }
 
-  return { authorize, handleRedirect, maybeSilentRefresh, disconnect, sync, moveHere, previousOwners, savePdf, listBackups, backupNow, BACKUP_FOLDER, readFile, shareWith, sharedWith,
+  return { authorize, handleRedirect, maybeSilentRefresh, disconnect, sync, moveHere, previousOwners, savePdf, listBackups, backupNow, BACKUP_FOLDER, readFile, shareWith, sharedWith, access, grant, revoke,
     isConnected, needsUpgrade, token, user, owner, state, clientId, setClientId, redirectUri, FOLDER };
 })();

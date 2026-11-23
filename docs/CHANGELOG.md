@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.1 — 23 Nov 2026
+- **Who has access** (Settings, studio account only): lists every Google account that can open the studio data and backups folders, with Owner / Editor / View only. Add an account as Editor or View only; Remove takes it off both folders and checks that it is gone. An account on only one of the two folders is flagged. A note reminds that new accounts must first be test users in Google Cloud (Google Auth Platform → Audience).
+- Other accounts see one line: who owns the studio data and whether they have Editor or View only access.
+- **View only** accounts: quotes open and PDFs preview, but nothing can be changed, sync only downloads and PDFs are not saved to Drive.
+- Fixed: "Some files from the old account were not copied yet" after the move. Opening the app as vishwaafx@gmail.com before it had access made a new data file in its old folder, which looked like an unfinished move. Now an account without access never makes its own copy (it works on the phone only and says who to ask), and any late copy from the old account is merged in and renamed `merged_…`.
+
 ## v1.3.0 — 23 Nov 2026
 - The studio data account is now **vishwaafxacc@gmail.com**. One-time move in Settings → "Move studio data here": copies the quotes, every backup and every PDF into vishwaafxacc's Drive (copies are owned by it), checks the copy, then renames the old data file `moved_to_vishwaafxacc_…`. Nothing is deleted; the old vishwaafx folders stay as an archive. Until the move, every account keeps using the old file, and quotes typed on other phones during the move are merged in.
 - vishwaafx@gmail.com becomes an extra user once vishwaafxacc shares the studio data with it.

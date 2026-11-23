@@ -1,5 +1,6 @@
 """Two-account Google Drive simulation for Quote Desk.
-Fakes the Drive API in the browser and checks sharing, merge, backups, restore and PDF save.
+Fakes the Drive API in the browser and checks sharing, merge, backups, restore, PDF save,
+the owner move (v1.3.0) and the access manager (v1.3.1).
 Run from anywhere:  python3 tests/drive_sim_test.py
 Needs: pip install playwright && python3 -m playwright install chromium"""
 import asyncio, json, os, re, subprocess, sys, time, itertools, urllib.parse as up
@@ -16,15 +17,20 @@ TOK = {'tok_v': 'vishwaafx@gmail.com', 'tok_d': 'dicksonpjo@gmail.com', 'tok_a':
 FOLDER = 'application/vnd.google-apps.folder'
 
 def mtime(): return '2026-10-26T10:%02d:%02d.000Z' % divmod(next(CLOCK), 60)
-def visible(f, me):
-    x = f
+PIDS = itertools.count(1)
+def role(f, me):  # best role `me` has on f, inherited from parent folders as on Drive
+    x, best = f, None
     while x:
-        if x['owner'] == me or me in x['perms']: return True
+        if x['owner'] == me: return 'owner'
+        for p in x['perms']:
+            if p['email'] == me and (best is None or p['role'] == 'writer'): best = p['role']
         x = DRIVE.get(x['parents'][0]) if x['parents'] and x['parents'][0] != 'root' else None
-    return False
+    return best
+def visible(f, me): return role(f, me) is not None
+def can_edit(f, me): return role(f, me) in ('owner', 'writer')
 def meta(f, me):
     return {'id': f['id'], 'name': f['name'], 'modifiedTime': f['mt'], 'createdTime': f['ct'], 'ownedByMe': f['owner'] == me,
-            'owners': [{'emailAddress': f['owner']}], 'parents': f['parents'], 'mimeType': f['mime']}
+            'owners': [{'emailAddress': f['owner']}], 'parents': f['parents'], 'mimeType': f['mime'], 'capabilities': {'canEdit': can_edit(f, me)}}
 def match(f, q, me):
     for cl in [c.strip() for c in q.split(' and ')]:
         m = re.fullmatch(r"name='(.*)'", cl)
@@ -64,28 +70,40 @@ async def handler(route):
         content = [p for p in parts if 'name="file"' in p][0].split('\r\n\r\n', 1)[1].rstrip('\r\n')
         par = DRIVE[mj['parents'][0]]
         if not visible(par, me): return await route.fulfill(status=404, body='parent')
+        if not can_edit(par, me): return await route.fulfill(status=403, body='read only')
         f = new(mj['name'], mj['mimeType'], mj['parents'][0], par['owner'] if par['owner'] != me else me, content)
         return await ok({'id': f['id'], 'modifiedTime': f['mt']})
     m = re.fullmatch(r'/upload/drive/v3/files/(\w+)', path)
     if m and req.method == 'PATCH':
-        f = DRIVE[m.group(1)]; f['content'] = req.post_data_buffer.decode('utf8'); f['mt'] = mtime(); return await ok({'id': f['id'], 'modifiedTime': f['mt']})
+        f = DRIVE[m.group(1)]
+        if not can_edit(f, me): return await route.fulfill(status=403, body='read only')
+        f['content'] = req.post_data_buffer.decode('utf8'); f['mt'] = mtime(); return await ok({'id': f['id'], 'modifiedTime': f['mt']})
     m = re.fullmatch(r'/drive/v3/files/(\w+)/copy', path)
     if m and req.method == 'POST':
         src = DRIVE.get(m.group(1)); b = json.loads(req.post_data)
         if not src or not visible(src, me): return await route.fulfill(status=404, body='nf')
         f = new(b.get('name', src['name']), src['mime'], b['parents'][0], me, src['content']); return await ok({'id': f['id']})
-    m = re.fullmatch(r'/drive/v3/files/(\w+)/permissions', path)
+    m = re.fullmatch(r'/drive/v3/files/(\w+)/permissions(?:/(\w+))?', path)
     if m:
-        f = DRIVE[m.group(1)]
+        f = DRIVE[m.group(1)]; pid = m.group(2)
+        if req.method != 'GET' and f['owner'] != me: return await route.fulfill(status=403, body='not owner')
         if req.method == 'POST':
-            if f['owner'] != me: return await route.fulfill(status=403, body='not owner')
-            f['perms'].append(json.loads(req.post_data)['emailAddress']); return await ok({'id': 'p'})
-        return await ok({'permissions': [{'emailAddress': f['owner'], 'role': 'owner'}] + [{'emailAddress': e, 'role': 'writer'} for e in f['perms']]})
+            b = json.loads(req.post_data)
+            if any(p['email'] == b['emailAddress'] for p in f['perms']): return await route.fulfill(status=400, body='duplicate')
+            p = {'id': 'p%d' % next(PIDS), 'email': b['emailAddress'], 'role': b['role']}; f['perms'].append(p); return await ok({'id': p['id']})
+        if req.method == 'PATCH':
+            p = [p for p in f['perms'] if p['id'] == pid][0]; p['role'] = json.loads(req.post_data)['role']; return await ok({'id': pid})
+        if req.method == 'DELETE':
+            f['perms'] = [p for p in f['perms'] if p['id'] != pid]; return await route.fulfill(status=204, body='')
+        return await ok({'permissions': [{'id': 'own', 'type': 'user', 'emailAddress': f['owner'], 'role': 'owner'}]
+                         + [{'id': p['id'], 'type': 'user', 'emailAddress': p['email'], 'role': p['role']} for p in f['perms']]})
     m = re.fullmatch(r'/drive/v3/files/(\w+)', path)
     if m:
         f = DRIVE.get(m.group(1))
         if not f or not visible(f, me): return await route.fulfill(status=404, body='nf')
-        if req.method == 'PATCH': f.update(json.loads(req.post_data)); f['mt'] = mtime(); return await ok({'id': f['id']})
+        if req.method == 'PATCH':
+            if not can_edit(f, me): return await route.fulfill(status=403, body='read only')
+            f.update(json.loads(req.post_data)); f['mt'] = mtime(); return await ok({'id': f['id']})
         if qs.get('alt') == 'media': return await route.fulfill(status=200, content_type='application/json', body=f['content'])
         return await ok(meta(f, me))
     print('UNHANDLED', req.method, req.url); return await route.fulfill(status=500, body='?')
@@ -109,7 +127,8 @@ async def main():
         async def add(pg, n): await pg.evaluate("n => { const p = createProject(store,{name:n,category:'Feature Film',templateId:'tpl_film'}); store.projects.push(p); saveLocal(store); }", n)
         async def sync(pg): await pg.evaluate("runSync(true)"); await pg.wait_for_timeout(1200); return await pg.evaluate("({s: syncState, mode: store.meta.syncMode, acct: store.meta.syncAccount})")
 
-        D, de = await device('tok_d'); await add(D, 'Dickson only quote'); print('D private:', await sync(D), await names(D))
+        D, de = await device('tok_d'); await add(D, 'Dickson only quote'); print('D no access:', await sync(D), await names(D))
+        print('D wrote nothing to Drive:', not any(f['owner'] == 'dicksonpjo@gmail.com' for f in DRIVE.values()))
         V, ve = await device('tok_v'); await add(V, 'Studio quote'); print('V owner:', await sync(V), await names(V))
         await V.evaluate("Drive.shareWith('dicksonpjo@gmail.com')"); await V.wait_for_timeout(300)
         print('D after share:', await sync(D), await names(D))
@@ -206,6 +225,87 @@ async def main():
         check('vishwaafx sees backups', len(await V2.evaluate("Drive.listBackups().then(l=>l.map(f=>f.name))")) >= len(old_backups) + 1, True)
         check('move: no page errors', errs, [])
         print('MOVE TEST', 'FAILED' if len(fails) > nb else 'PASSED')
+
+        # ---- v1.3.1: the old owner opens the app after the move, before it has access ----
+        # (what happened on 23 Nov: v1.3.0 made a new data file in vishwaafx's old folder, and
+        #  vishwaafxacc then said "Some files from the old account were not copied yet")
+        DRIVE.clear(); errs = []; nb = len(fails)
+        V, e = await device('tok_v'); errs += e; await add(V, 'Old studio quote'); await sync(V)
+        await V.evaluate("Drive.backupNow(store)"); await V.evaluate("Drive.shareWith('vishwaafxacc@gmail.com')")
+        A, e = await device('tok_a', owner=NEW, prev=OLD); errs += e; await sync(A)
+        await A.evaluate("Drive.moveHere(store)"); st = await sync(A)
+        check('move done, owner mode', (st['mode'], await A.evaluate("!!Drive.state.moveSource")), ('owner', False))
+        V2, e = await device('tok_v', owner=NEW, prev=OLD); errs += e
+        await add(V2, 'Typed on old account'); st = await sync(V2)
+        check('old owner without access: no-access mode', st['mode'], 'noaccess')
+        check('old owner without access writes no data file', [n for n, o in data_files() if o == 'vishwaafx@gmail.com' and n == 'vishwaafx_quotes_data.json'], [])
+        st = await sync(A); check('owner sees no "not copied" warning', await A.evaluate("!!Drive.state.moveSource"), False)
+        await A.evaluate("go({name:'settings', kind:'quote'})"); await A.wait_for_timeout(300)
+        check('settings has no Finish the move button', await A.evaluate("!!document.querySelector('[data-act=movedata]')"), False)
+        # A late copy that v1.3.0 already made is merged in and retired, not treated as an unfinished move
+        old_root = [f for f in DRIVE.values() if f['name'] == 'VishwaaFX Quotes' and f['owner'] == 'vishwaafx@gmail.com'][0]
+        late = json.loads([f for f in DRIVE.values() if f['name'] == 'vishwaafx_quotes_data.json' and f['owner'] == NEW][0]['content'])
+        late['projects'].append({**late['projects'][0], 'id': 'late1', 'name': 'Late copy quote', 'updatedAt': '2026-11-23T15:00:00.000Z'})
+        new('vishwaafx_quotes_data.json', 'application/json', old_root['id'], 'vishwaafx@gmail.com', json.dumps(late))
+        st = await sync(A)
+        check('late old-owner copy: no warning', await A.evaluate("!!Drive.state.moveSource"), False)
+        check('late old-owner copy: its quote is kept', 'Late copy quote' in await names(A), True)
+        check('late old-owner copy: renamed merged_', any(n.startswith('merged_') and o == 'vishwaafx@gmail.com' for n, o in data_files()), True)
+        check('only one live data file', [o for n, o in data_files() if n == 'vishwaafx_quotes_data.json'], [NEW])
+
+        # ---- v1.3.1: access manager ----
+        acc = lambda pg: pg.evaluate("Drive.access().then(l => l.map(p => [p.email, p.role, p.partial]))")
+        perms_on = lambda who: sorted((DRIVE[i]['name'], p['role']) for i in DRIVE for p in DRIVE[i]['perms'] if p['email'] == who and DRIVE[i]['owner'] == NEW)
+        check('access list starts with the owner only', await acc(A), [[NEW, 'owner', False]])
+        await A.evaluate("Drive.grant('vishwaafx@gmail.com', 'writer')"); await A.evaluate("Drive.grant('DicksonPJO@gmail.com', 'reader')")
+        check('add: both folders, Editor', perms_on('vishwaafx@gmail.com'), [('VishwaaFX Quotes', 'writer'), ('VishwaaFX Quotes Backups', 'writer')])
+        check('add: email made lower case, View only on both', perms_on('dicksonpjo@gmail.com'), [('VishwaaFX Quotes', 'reader'), ('VishwaaFX Quotes Backups', 'reader')])
+        check('access list', await acc(A), [[NEW, 'owner', False], ['dicksonpjo@gmail.com', 'reader', False], ['vishwaafx@gmail.com', 'writer', False]])
+        st = await sync(V2)
+        check('old owner after being added: Editor, sees everything, its quote kept', (st['mode'], 'Typed on old account' in await names(V2), 'Late copy quote' in await names(V2)), ('shared', True, True))
+        await sync(A); check('quote typed on old account reaches the owner', 'Typed on old account' in await names(A), True)
+        Dv, e = await device('tok_d', owner=NEW, prev=OLD); errs += e; st = await sync(Dv)
+        check('View only account: view mode, sees quotes', (st['mode'], 'Old studio quote' in await names(Dv)), ('view', True))
+        mt_before = [f['mt'] for f in DRIVE.values() if f['name'] == 'vishwaafx_quotes_data.json' and f['owner'] == NEW]
+        await Dv.evaluate("store.projects[0].name = 'hacked'; touchP(store.projects[0])"); await sync(Dv)
+        check('View only account never writes the data file', [f['mt'] for f in DRIVE.values() if f['name'] == 'vishwaafx_quotes_data.json' and f['owner'] == NEW], mt_before)
+        pid = await Dv.evaluate("store.projects.find(p => !p.deleted).id")
+        await Dv.evaluate(f"go({{name:'project', id:'{pid}', kind:'quote'}})"); await Dv.wait_for_timeout(300)
+        check('View only: fields locked, PDF button still there', await Dv.evaluate("[!!document.querySelector('[data-bind]') && [...document.querySelectorAll('main [data-bind]')].every(f => f.disabled), !!document.querySelector('[data-act=pdf]')]"), [True, True])
+        check('View only: cannot save PDFs to Drive', 'View only' in await Dv.evaluate("Drive.savePdf('x.pdf','X', new Uint8Array([1])).then(()=>'saved').catch(e=>e.message)"), True)
+        await Dv.evaluate("go({name:'settings', kind:'quote'})"); await Dv.wait_for_timeout(300)
+        await Dv.set_viewport_size({'width': 390, 'height': 844}); await Dv.wait_for_timeout(200)
+        if os.environ.get('SHOTS'): await (await Dv.query_selector('main section')).screenshot(path=os.path.join(os.environ['SHOTS'], 'access_3_view_only.png'))
+        line = await Dv.evaluate("document.querySelector('.okbox')?.innerText || ''")
+        check('other accounts see who owns the data', 'owned by vishwaafxacc@gmail.com' in line and 'View only' in line, True)
+        check('other accounts have no access manager', await Dv.evaluate("!!document.getElementById('access')"), False)
+        check('only the owner can manage access', 'only vishwaafxacc' in await V2.evaluate("Drive.grant('x@gmail.com','writer').then(()=>'ok').catch(e=>e.message)"), True)
+        check('only the owner can remove', 'only vishwaafxacc' in await V2.evaluate("Drive.revoke('dicksonpjo@gmail.com').then(()=>'ok').catch(e=>e.message)"), True)
+        await A.evaluate("Drive.grant('dicksonpjo@gmail.com', 'writer')")
+        check('change role: View only -> Editor on both, no duplicates', perms_on('dicksonpjo@gmail.com'), [('VishwaaFX Quotes', 'writer'), ('VishwaaFX Quotes Backups', 'writer')])
+        st = await sync(Dv); check('promoted account can edit', st['mode'], 'shared')
+        # an account that was only on one folder (e.g. added by hand in Drive) is shown as such, and Remove clears it
+        bk = [f for f in DRIVE.values() if f['name'] == 'VishwaaFX Quotes Backups' and f['owner'] == NEW][0]
+        bk['perms'].append({'id': 'p999', 'email': 'stray@gmail.com', 'role': 'reader'})
+        check('partial access is flagged', [r for r in await acc(A) if r[0] == 'stray@gmail.com'], [['stray@gmail.com', 'reader', True]])
+        await A.set_viewport_size({'width': 390, 'height': 844}); await A.evaluate("go({name:'settings', kind:'quote'})"); await A.wait_for_timeout(600)
+        if os.environ.get('SHOTS'): await (await A.query_selector('main section')).screenshot(path=os.path.join(os.environ['SHOTS'], 'access_1_owner.png'))
+        rows = await A.evaluate("[...document.querySelectorAll('#accesslist .list-row')].map(r => [r.querySelector('b').innerText, !!r.querySelector('[data-act=unshare]')])")
+        check('settings list: owner has no Remove button', rows[0], [NEW, False])
+        check('settings list: one row per account', len(rows), 4)
+        await A.evaluate("ACT.unshare({dataset:{v:'dicksonpjo@gmail.com'}})"); await A.evaluate("ACT.confirmok()"); await A.wait_for_timeout(800)
+        check('remove: off the studio AND the backups folder', perms_on('dicksonpjo@gmail.com'), [])
+        check('remove: gone from the settings list', 'dicksonpjo@gmail.com' in await A.evaluate("document.getElementById('accesslist').innerText"), False)
+        await A.evaluate("Drive.revoke('stray@gmail.com')"); check('remove a one-folder account', perms_on('stray@gmail.com'), [])
+        check('owner cannot remove itself', 'cannot remove itself' in await A.evaluate(f"Drive.revoke('{NEW}').then(()=>'ok').catch(e=>e.message)"), True)
+        st = await sync(Dv)
+        check('removed account drops to no-access, writes nothing', (st['mode'], perms_on('dicksonpjo@gmail.com')), ('noaccess', []))
+        await A.evaluate("go({name:'settings', kind:'quote'})"); await A.wait_for_timeout(600)
+        await A.fill('#sharemail', 'dicksonpjo@gmail.com'); await A.select_option('#sharerole', 'writer'); await A.click('[data-act=share]'); await A.wait_for_timeout(800)
+        check('Add box in settings adds as Editor', perms_on('dicksonpjo@gmail.com'), [('VishwaaFX Quotes', 'writer'), ('VishwaaFX Quotes Backups', 'writer')])
+        check('test-user note shown', 'Google Auth Platform' in await A.evaluate("document.getElementById('access').innerText"), True)
+        check('access: no page errors', errs, [])
+        print('ACCESS TEST', 'FAILED' if len(fails) > nb else 'PASSED')
         await b.close()
         if fails: sys.exit(1)
 try: asyncio.run(main())
