@@ -6,10 +6,11 @@ must not break, and how to test and ship a change.
 - **Owner:** Dickson P Jo (VishwaaFX, Kochi). Talks in short messages; wants to see what you are
   doing as you do it, and to approve anything that changes live data or goes live.
 - **Live app:** https://dicksonpjo-sys.github.io/quote-desk/ (GitHub Pages, `main` branch, root folder)
-- **Current version:** v1.3.2 (`APP_VERSION` in `js/data.js`)
+- **Current version:** v1.4.0 (`APP_VERSION` in `js/data.js`)
 - **Accounts:** studio data owner **vishwaafxacc@gmail.com**; extra users **vishwaafx@gmail.com** and
   **dicksonpjo@gmail.com** (both Editor). Dickson dictates by voice, so emails can arrive misspelt
   ("visualfx", "dixonpjo"); these three are the real ones.
+- **Studio Console file format:** `docs/STUDIO_CONSOLE_INDEX.md`
 - **User guide:** `docs/FEATURES.md` · **Hosting and Google setup:** `SETUP.md` · **History:** `docs/CHANGELOG.md`
 
 ## What it is
@@ -28,7 +29,7 @@ Two kinds of documents, chosen on the start screen:
 |---|---|
 | `index.html` | Shell. Loads every script with `?v=<version>`; bump these on each release. |
 | `js/config.js` | Google OAuth Client ID, `VFXQ_DATA_OWNER` (studio account `vishwaafxacc@gmail.com`) and `VFXQ_PREVIOUS_OWNERS` (`vishwaafx@gmail.com`). |
-| `js/data.js` | `APP_VERSION`, data model, default settings (company, banks, note blocks, templates), number formats, calculations, quote numbering, `mergeStores`. |
+| `js/data.js` | `APP_VERSION`, data model, default settings (company, banks, note blocks, templates), number formats, calculations, quote numbering, `mergeStores`, `buildIndex` (Studio Console file), `versionsOf` / `diffVersions` (Versions tab). |
 | `tests/fixtures/sample.js` | Test-only quotes rebuilt from real PDFs (fixed ids `sample_*`). Not loaded by the app since v1.3.2: the repo and site are public. |
 | `js/sync.js` | Google sign-in (OAuth token redirect flow) and every Drive call: shared studio file, merge, PDFs, versioned backups, sharing. |
 | `js/pdf.js` | PDF builder (pdf-lib). Monochrome letterhead, summary page + breakdown pages, single page, supervision bill, page selection. |
@@ -47,7 +48,7 @@ Project = { id, kind: 'quote'|'supervision', fy: '26-27', seq, rev, name, catego
             date, validDays, status, templateId, mode: 'batches'|'tiers', singlePage, signatoryId, bankId,
             blocks: [NoteBlock copy], sections: [Section], selectedTier, pdf: {title, copyLabel,
             showPayment, showGst, showMinutes, gstText, showSignature}, revisions: [], createdAt,
-            updatedAt, deleted }
+            updatedAt, deleted, studioId, lastPdf: {id, name, at} }   // studioId, lastPdf since v1.4.0
 Section = { id, name, summaryDesc, subtitle, lines: [Line], discountType: none|final|amount|percent,
             discount, durMode: sum|max|manual, durManual, pay: {status: Pending|Partial|Paid, received, date} }
 Line    = { id, desc, type: 'rate'|'lump', sec, rate, amount, date }   // date used by supervision bills
@@ -78,6 +79,13 @@ Line    = { id, desc, type: 'rate'|'lump', sec, rate, amount, date }   // date u
   valid 30 days. Mode `noaccess` clears it and wipes the local store. A new sign-in clears it first.
   This is a screen lock, not security: the code is public, so **never put studio data (bank numbers,
   client quotes, prices) in the repo**. The real protection is Drive permissions + Google test users.
+- **Studio Console index (v1.4.0):** `quote_desk_index.json` beside the data file, built by
+  `buildIndex()` on every sync in mode owner/shared, written only when it changed. Only the owner
+  creates it; Editors overwrite it (ownership stays with the owner); view/noaccess never write it.
+  Never put bank details in it. Changing its fields = update `docs/STUDIO_CONSOLE_INDEX.md` and tell Dickson
+  (Studio Console reads it).
+- **Revisions:** `p.revisions[]` = `{rev, savedAt, total, data}` snapshots; section, line and note ids
+  stay the same across versions, which is how Compare matches them. Do not regenerate those ids.
 - **Merge, never overwrite blindly:** `mergeStores` keeps the newest `updatedAt` per project and per
   settings. Every edit must call `touchP(p)` or `touchS()` so its timestamp moves. Deletes are soft
   (`deleted: true`) so they sync.
@@ -124,7 +132,8 @@ In the Claude Code cloud container: Node Playwright is pre-installed. For the Py
 `tests/drive_sim_test.py` fakes Google Drive and checks: private copy → owner file → sharing →
 merge of the stray copy → backups visible to both → "Replace everything" restore → PDF save →
 9 PM backups across devices → owner move from vishwaafx to vishwaafxacc (three accounts) →
-old owner opening before it has access → access manager (add, change role, view only, remove from both folders).
+old owner opening before it has access → access manager (add, change role, view only, remove from both folders) →
+Studio Console index (owner creates, Editors update live, View only never writes, PDF link).
 Set `SHOTS=<folder>` to save screenshots of the move screens.
 Run it after any change to `js/sync.js`, `mergeStores` or restore.
 
@@ -162,10 +171,9 @@ Run it after any change to `js/sync.js`, `mergeStores` or restore.
   old owner making a new data file after the move. Tests in `tests/drive_sim_test.py` ("ACCESS TEST").
 - **v1.3.2 — Sign-in lock.** Only allowed accounts open the app; removed accounts are locked and wiped;
   bank numbers and sample quotes taken out of the public code.
-- **v1.4.0 — Studio Console link.** Read-only `quote_desk_index.json` next to the data file (quote no.,
-  kind, project, client, category, created/quote/valid-till dates, status, total, received, due,
-  updated, PDF link; no bank details). Optional Studio project ID on each quote. Studio Console runs
-  on vishwaafxacc@gmail.com and only reads. Write the Studio Console prompt once the format is final.
-- **v1.5.0 — Browse quote revisions:** Versions tab per quote (Original, R1, R2…), view, PDF, compare.
-- **v1.6.0 — Clearer quote screen:** labelled sections (details / bills / totals & discount / payments),
-  column headings on lines, nothing hidden behind the total bar.
+- **v1.4.0 — Studio Console link + Versions + Clearer quote screen** (the planned 1.4, 1.5 and 1.6,
+  combined at Dickson's request). Index format final: `docs/STUDIO_CONSOLE_INDEX.md`; one Studio project
+  ID per quote, every bill listed under it; options report the approved one only. Next: write the
+  Studio Console prompt from that format.
+- **Later ideas:** Malayalam in PDFs (embedded Unicode font), VFX Edit Tool Kit CSV import, private repo
+  (needs GitHub Pro to keep Pages).

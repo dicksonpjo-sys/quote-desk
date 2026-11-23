@@ -272,6 +272,7 @@ async def main():
         check('View only account: view mode, sees quotes', (st['mode'], 'Old studio quote' in await names(Dv)), ('view', True))
         mt_before = [f['mt'] for f in DRIVE.values() if f['name'] == 'vishwaafx_quotes_data.json' and f['owner'] == NEW]
         await Dv.evaluate("store.projects[0].name = 'hacked'; touchP(store.projects[0])"); await sync(Dv)
+        check('View only phone takes Drive as it is (local change dropped)', 'hacked' in await names(Dv), False)
         check('View only account never writes the data file', [f['mt'] for f in DRIVE.values() if f['name'] == 'vishwaafx_quotes_data.json' and f['owner'] == NEW], mt_before)
         pid = await Dv.evaluate("store.projects.find(p => !p.deleted).id")
         await Dv.evaluate(f"go({{name:'project', id:'{pid}', kind:'quote'}})"); await Dv.wait_for_timeout(300)
@@ -311,6 +312,32 @@ async def main():
         check('test-user note shown', 'Google Auth Platform' in await A.evaluate("document.getElementById('access').innerText"), True)
         check('access: no page errors', errs, [])
         print('ACCESS TEST', 'FAILED' if len(fails) > nb else 'PASSED')
+
+        # ---- v1.4.0: Studio Console summary file (quote_desk_index.json) ----
+        nb = len(fails)
+        idx_files = lambda: [f for f in DRIVE.values() if f['name'] == 'quote_desk_index.json' and not f.get('trashed') and DRIVE[f['parents'][0]]['owner'] == NEW]
+        idx = lambda: json.loads(idx_files()[0]['content'])
+        await sync(A)
+        check('index: created by the studio account, next to the data file', [(f['owner'], DRIVE[f['parents'][0]]['name']) for f in idx_files()], [(NEW, 'VishwaaFX Quotes')])
+        check('index: one entry per live quote', sorted(q['project'] for q in idx()['quotes']), sorted(await names(A)))
+        check('index: no bank details', bool(re.search(r'accNo|ifsc|accName', idx_files()[0]['content'])), False)
+        await add(V2, 'Index live test'); await sync(V2)
+        check('index: an Editor sync updates it at once (owner has not synced)', 'Index live test' in [q['project'] for q in idx()['quotes']], True)
+        check('index: still one file, still owned by the studio account', [f['owner'] for f in idx_files()], [NEW])
+        mt = idx_files()[0]['mt']; await sync(V2)
+        check('index: not rewritten when nothing changed', idx_files()[0]['mt'], mt)
+        await V2.evaluate("(() => { const p = store.projects.find(x => x.name === 'Index live test'); p.studioId = 'STU-7'; p.sections[0].lines = [newLine('Roto','rate','10','1000')]; p.sections[0].pay = {status:'Partial', received:'4000', date:'2026-11-23'}; p.status = 'Approved'; touchP(p); })()")
+        await sync(V2); q = [x for x in idx()['quotes'] if x['project'] == 'Index live test'][0]
+        check('index: live totals, payment and Studio ID without a PDF', (q['studioProjectId'], q['total'], q['received'], q['due'], q['pdf']), ('STU-7', 10000, 4000, 6000, None))
+        await V2.evaluate("async () => { const p = store.projects.find(x => x.name === 'Index live test'); lastPdf = { p, folder: 'VFX-26-27-099 Index', current: true }; await saveToDrive({ name: 'idx.pdf', bytes: new Uint8Array([37,80,68,70]) }, true); }")
+        await V2.wait_for_timeout(300); await sync(V2)
+        q = [x for x in idx()['quotes'] if x['project'] == 'Index live test'][0]
+        pdf_id = [f['id'] for f in DRIVE.values() if f['name'] == 'idx.pdf'][0]
+        check('index: link to the saved PDF', (q['pdf'] or {}).get('link'), f'https://drive.google.com/file/d/{pdf_id}/view')
+        await A.evaluate("Drive.grant('dicksonpjo@gmail.com', 'reader')"); st = await sync(Dv); mt = idx_files()[0]['mt']
+        await sync(Dv); check('index: View only account never writes it', (st['mode'], idx_files()[0]['mt']), ('view', mt))
+        check('index: no page errors', errs, [])
+        print('INDEX TEST', 'FAILED' if len(fails) > nb else 'PASSED')
         await b.close()
         if fails: sys.exit(1)
 try: asyncio.run(main())

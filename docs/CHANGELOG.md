@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.4.0 — 23 Nov 2026
+Three planned updates in one release (1.4 + 1.5 + 1.6, Dickson's call).
+- **Studio Console link.** `quote_desk_index.json` next to the data file, rebuilt from live quote data on every sync: quote no., project, client, category, status, dates, total, received, due, Studio project ID, PDF link, and every bill (Initial Bill, Additional Bill A, B…) with amount, discount, screen time and payment. Quality-option quotes report only the approved option. No bank details. Created by vishwaafxacc; Editor accounts keep it up to date. Format: `docs/STUDIO_CONSOLE_INDEX.md`.
+- **Studio project ID** field on every quote (Details).
+- **Versions tab:** Original, R1, R2… and the version being edited, each with View and PDF; Compare any two (total before → after, lines added / removed / changed, discount, screen time, notes). Start revision moved here from the PDF tab.
+- **Clearer quote screen:** labelled sections (Details, Bills, Totals & discount, Totals & payments), column headings on lines (Type · Seconds · ₹/sec · Amount), a totals card listing every bill, received and balance, and the last card always clear of the total bar.
+- Saving a PDF to Drive records its link on the quote.
+- View only phones always take Drive's copy as it is.
+
 ## v1.3.2 — 23 Nov 2026
 - **Sign-in lock.** The app opens only for Google accounts that can open the studio data: vishwaafxacc@gmail.com and the accounts in its Settings → Who has access. Any other account, or a browser that never signed in, sees only a sign-in screen. The check runs against Drive every time the app opens online; a checked phone keeps working offline for up to 30 days.
 - An account that is removed from Who has access is locked out and its quotes are wiped from that phone at the next online open.

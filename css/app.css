@@ -260,3 +260,33 @@ details.acc[open] > summary { margin-bottom: 12px; }
 .pgsel input { width: 20px; height: 20px; accent-color: var(--mint); }
 .pagesel { flex-basis: 100%; font-size: 12.5px; color: var(--muted); }
 .readonly .fab { display: none; }
+
+/* ---------- v1.4.0: labelled sections, column headings, versions ---------- */
+.lbl { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--brand); margin-bottom: -6px; }
+.lbl.sm { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
+.qhead .lbl { margin-bottom: -4px; }
+.line .l2 > .type-t { width: 64px; }
+.colh { display: grid; grid-template-columns: 64px 1fr 10px 1fr 84px; gap: 6px; padding: 8px 0 0 24px;
+  font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.colh span:nth-child(n+2) { text-align: right; }
+.line .l2 .op { width: 10px; text-align: center; }
+/* Keep the last card clear of the fixed total bar, safe area included */
+.wrap:has(~ .bottombar) { padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)); }
+.vview { gap: 10px; }
+.vbill { display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.vt { width: 100%; border-collapse: collapse; font-size: 13px; }
+.vt th { text-align: left; font-size: 11px; color: var(--muted); font-weight: 600; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.vt td { padding: 5px 0; border-bottom: 1px dashed var(--line); vertical-align: top; }
+.vt .r { text-align: right; white-space: nowrap; padding-left: 8px; }
+.vview details summary { font-size: 13px; font-weight: 600; cursor: pointer; }
+.vview ul { margin: 6px 0 0 18px; padding: 0; font-size: 13px; }
+.dline { font-size: 13px; padding: 6px 0; border-top: 1px dashed var(--line); }
+.dline .add { color: var(--ok); } .dline .del { color: var(--bad); }
+.tag { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 9px; vertical-align: 1px; }
+.tag.added { background: var(--ok-bg); color: var(--ok); }
+.tag.removed { background: var(--bad-bg); color: var(--bad); }
+.tag.changed { background: var(--warn-bg); color: var(--warn); }
+.line .l2 { grid-template-columns: 64px 1fr 10px 1fr 84px; }
+.line .l2.lump { grid-template-columns: 64px 1fr; }
+.colh .d { grid-column: 1 / -1; text-align: left !important; }
+.colh span { white-space: nowrap; }

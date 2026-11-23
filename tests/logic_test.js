@@ -5,7 +5,7 @@ const fs = require('fs'), path = require('path'), vm = require('vm');
 const ctx = { console, localStorage: { getItem: () => null, setItem: () => {} } };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'data.js'), 'utf8') +
-  '\n;this.api = { inr, fyOf, addDays, billLetter, secLabel, secTitle, createProject, nextSeq, quoteNo, secGross, secNet, secDiscount, secDuration, sameDurWarning, projectValue, projectReceived, projectPending, mergeStores, emptyStore, newLine, newSection, validTill, mmss };', ctx);
+  '\n;this.api = { inr, fyOf, addDays, billLetter, secLabel, secTitle, createProject, nextSeq, quoteNo, secGross, secNet, secDiscount, secDuration, sameDurWarning, projectValue, projectReceived, projectPending, mergeStores, emptyStore, newLine, newSection, validTill, mmss, buildIndex, diffVersions, versionsOf, revName, clone };', ctx);
 const A = ctx.api;
 let pass = 0, fail = 0;
 function eq(name, got, want) {
@@ -92,6 +92,67 @@ m = A.mergeStores({ settings: a.settings, projects: [c1] }, { settings: a.settin
 const byId = Object.fromEntries(m.projects.map(x => [x.id, x]));
 eq('offline duplicate: first keeps number', byId.c1.seq, 5);
 eq('offline duplicate: later renumbered', [byId.c2.seq, byId.c2.renumbered], [6, true]);
+
+// ---- v1.4.0: Studio Console summary file ----
+{
+  const st = A.emptyStore();
+  const q = A.createProject(st, { name: 'Mayan', category: 'Feature Film', client: 'Prod Co', templateId: 'tpl_film', date: '2026-11-01' });
+  q.studioId = ' STU-042 '; q.status = 'Approved';
+  q.sections = [A.newSection(), A.newSection('Reel 2')];
+  q.sections[0].lines = [A.newLine('Roto', 'rate', '10', '1000')]; q.sections[0].pay = { status: 'Paid', received: '', date: '2026-11-10' };
+  q.sections[1].lines = [A.newLine('Comp', 'rate', '20', '1500')]; q.sections[1].discountType = 'amount'; q.sections[1].discount = '5000';
+  q.sections[1].pay = { status: 'Partial', received: '10000', date: '2026-11-20' };
+  const t = A.createProject(st, { name: 'Ad', category: 'Ad Film', client: 'X', templateId: 'tpl_ad', date: '2026-11-02' });
+  t.mode = 'tiers'; t.sections = [A.newSection('Premium'), A.newSection('Standard')];
+  t.sections[0].lines = [A.newLine('All', 'lump', '', '', '200000')]; t.sections[1].lines = [A.newLine('All', 'lump', '', '', '120000')];
+  const gone = A.createProject(st, { name: 'Deleted one', category: 'Feature Film', client: '', templateId: 'tpl_film', date: '2026-11-03' }); gone.deleted = true;
+  st.projects.push(q, t, gone);
+  let ix = A.buildIndex(st); const mq = ix.quotes.find(x => x.project === 'Mayan');
+  eq('index: deleted quotes left out', ix.quotes.map(x => x.project).sort(), ['Ad', 'Mayan']);
+  eq('index: studio id trimmed', mq.studioProjectId, 'STU-042');
+  eq('index: every bill listed with its label', mq.bills.map(b => [b.label, b.title]), [['Initial Bill', ''], ['Additional Bill A', 'Reel 2']]);
+  eq('index: bill amounts after discount', mq.bills.map(b => [b.gross, b.discount, b.amount]), [[10000, 0, 10000], [30000, 5000, 25000]]);
+  eq('index: payments per bill', mq.bills.map(b => [b.payment.status, b.payment.received, b.payment.date]), [['Paid', 10000, '2026-11-10'], ['Partial', 10000, '2026-11-20']]);
+  eq('index: total / received / due', [mq.total, mq.received, mq.due], [35000, 20000, 15000]);
+  eq('index: screen time per bill', mq.bills.map(b => b.screenTimeSec), [10, 20]);
+  eq('index: dates', [mq.quoteDate, mq.validTill], ['2026-11-01', '2026-12-01']);
+  eq('index: no PDF saved = no link', mq.pdf, null);
+  const ad = ix.quotes.find(x => x.project === 'Ad');
+  eq('index: options with none approved = no total, no bills', [ad.optionApproved, ad.total, ad.bills.length], [false, null, 0]);
+  t.selectedTier = t.sections[1].id; ix = A.buildIndex(st);
+  const ad2 = ix.quotes.find(x => x.project === 'Ad');
+  eq('index: only the approved option', [ad2.total, ad2.bills.map(b => b.label)], [120000, ['Standard']]);
+  q.lastPdf = { id: 'abc', name: 'q.pdf', at: '2026-11-21T10:00:00Z' };
+  eq('index: PDF link when saved', A.buildIndex(st).quotes.find(x => x.project === 'Mayan').pdf.link, 'https://drive.google.com/file/d/abc/view');
+  const txt = JSON.stringify(A.buildIndex(st));
+  eq('index: no bank details', /accNo|ifsc|accName|bank/i.test(txt), false);
+}
+
+// ---- v1.4.0: versions and compare ----
+{
+  const st = A.emptyStore();
+  const p = A.createProject(st, { name: 'Film', category: 'Feature Film', client: 'C', templateId: 'tpl_film', date: '2026-11-01' });
+  p.sections = [A.newSection()]; const [l1, l2] = [A.newLine('Roto', 'rate', '10', '1000'), A.newLine('Paint', 'rate', '5', '800')];
+  p.sections[0].lines = [l1, l2];
+  p.blocks = [{ id: 'b1', title: 'Payment terms', heading: 'PAYMENT', items: ['50% advance'] }];
+  p.revisions = [{ rev: 0, savedAt: '2026-11-02T10:00:00Z', total: A.projectValue(p), data: A.clone({ name: p.name, client: p.client, date: p.date, validDays: p.validDays, sections: p.sections, blocks: p.blocks, mode: p.mode }) }];
+  p.rev = 1;
+  l1.sec = '15'; p.sections[0].lines = [l1, A.newLine('Sky', 'lump', '', '', '5000')];
+  p.sections.push(A.newSection('Extra')); p.sections[1].lines = [A.newLine('Comp', 'rate', '4', '1500')];
+  p.blocks[0].items = ['50% advance', 'Balance on delivery'];
+  const vs = A.versionsOf(p);
+  eq('versions: Original then R1', vs.map(v => [A.revName(v.rev), v.current]), [['Original', false], ['R1', true]]);
+  eq('versions: original keeps its own lines', vs[0].p.sections[0].lines.map(l => l.desc), ['Roto', 'Paint']);
+  const d = A.diffVersions(vs[0].p, vs[1].p);
+  eq('compare: totals', [d.totalFrom, d.totalTo], [14000, 26000]);
+  const b0 = d.bills.find(b => b.label === 'Initial Bill');
+  eq('compare: line changed / removed / added', b0.lines.map(l => [l.desc, l.change]), [['Roto', 'changed'], ['Paint', 'removed'], ['Sky', 'added']]);
+  eq('compare: changed line values', [b0.lines[0].from.sec, b0.lines[0].to.sec, b0.lines[0].to.amount], [10, 15, 15000]);
+  eq('compare: new bill', d.bills.filter(b => b.change === 'added').map(b => [b.label, b.netTo]), [['Additional Bill A – Extra', 6000]]);
+  eq('compare: notes', d.notes.map(n => [n.title, n.added]), [['Payment terms', ['Balance on delivery']]]);
+  const same = A.diffVersions(vs[1].p, vs[1].p);
+  eq('compare: same version = no differences', [same.fields.length, same.bills.length, same.notes.length], [0, 0, 0]);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

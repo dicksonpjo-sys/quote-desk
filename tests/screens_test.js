@@ -40,7 +40,7 @@ const srv = http.createServer((q, r) => {
   }
   const projects = await pg.evaluate(() => store.projects.filter(p => !p.deleted).map(p => ({ id: p.id, name: p.name, kind: p.kind || 'quote' })));
   for (const p of projects) {
-    const tabs = p.kind === 'supervision' ? [null] : ['quote', 'payments', 'terms', 'pdf'];
+    const tabs = p.kind === 'supervision' ? [null] : ['quote', 'pay', 'terms', 'pdf', 'versions'];
     for (const t of tabs) {
       await pg.evaluate(([id, kind, t]) => { ui.kind = kind; if (t) ui.tab = t; go({ name: 'project', id, kind }); }, [p.id, p.kind, t]); await pg.waitForTimeout(150);
       ok(`${p.name} · ${t || 'bill'}`, await pg.evaluate(() => document.body.innerText.length > 200));
@@ -55,6 +55,23 @@ const srv = http.createServer((q, r) => {
   await pg.evaluate(() => ACT.pdf()); await pg.waitForTimeout(2500);
   ok('PDF preview shows pages', await pg.evaluate(() => document.querySelectorAll('#viewer [data-pg]').length > 0));
   await pg.evaluate(() => ACT.closeviewer());
+  // v1.4.0: versions, view, compare, version PDF, and nothing hidden behind the total bar
+  await pg.evaluate(() => { const p = store.projects.find(x => !x.deleted && kindOf(x) === 'quote' && x.mode !== 'tiers' && x.sections.some(s => s.lines.some(l => l.type === 'rate'))); ui.tab = 'versions'; go({ name: 'project', id: p.id, kind: 'quote' }); });
+  await pg.evaluate(() => { ACT.newrev(); ACT.confirmok(); const p = curP(); const l = p.sections.flatMap(x => x.lines).find(x => x.type === 'rate'); l.sec = String(num(l.sec) + 5); touchP(p); ui.tab = 'versions'; render(); });
+  ok('versions tab lists Original and R1', await pg.evaluate(() => /Original/.test(document.body.innerText) && /R1 ·/.test(document.body.innerText)));
+  await pg.evaluate(() => ACT.compare());
+  ok('compare shows the changed line', await pg.evaluate(() => /Changed/.test(document.getElementById('cmpout')?.innerText || '')));
+  await pg.evaluate(() => { closeSheet(); ACT.viewver({ dataset: { v: '0' } }); });
+  ok('view a saved version', await pg.evaluate(() => /Original/.test(document.getElementById('sheet')?.innerText || '') && !!document.querySelector('#sheet .vt')));
+  await pg.evaluate(() => ACT.pdf({ dataset: { rev: '0' } })); await pg.waitForTimeout(2500);
+  ok('PDF of the original version (no -R1)', await pg.evaluate(() => document.querySelectorAll('#viewer [data-pg]').length > 0 && !/-R1/.test(lastPdf.name)));
+  await pg.evaluate(() => ACT.closeviewer());
+  for (const t of ['quote', 'pay', 'versions']) {
+    await pg.evaluate(t => { ui.tab = t; render(true); window.scrollTo(0, document.body.scrollHeight); }, t); await pg.waitForTimeout(150);
+    const [last, bar] = await pg.evaluate(() => [document.querySelector('main').lastElementChild.getBoundingClientRect().bottom, document.querySelector('.bottombar').getBoundingClientRect().top]);
+    ok(`${t} tab: last card clear of the total bar (${Math.round(last)} < ${Math.round(bar)})`, last <= bar);
+  }
+  ok('quote tab: labelled sections and column headings', await pg.evaluate(() => { ui.tab = 'quote'; render(); const t = document.body.innerText; return /DETAILS/.test(t) && /BILLS/.test(t) && /TOTALS & PAYMENTS/.test(t) && !!document.querySelector('.colh'); }));
   await pg.evaluate(() => go({ name: 'settings', kind: 'quote' })); await pg.waitForTimeout(300);
   ok('settings', await pg.evaluate(() => /Google Drive/.test(document.body.innerText)));
   ok('no page or console errors', errs.length === 0, JSON.stringify(errs));

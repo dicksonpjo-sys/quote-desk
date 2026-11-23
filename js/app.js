@@ -23,6 +23,7 @@ const I = {
 };
 
 /* ---------------- state helpers ---------------- */
+const ACT = {}; // every tap handler, by data-act name
 const curP = () => store.projects.find(p => p.id === route.id);
 const secOf = (p, id) => p.sections.find(s => s.id === id);
 let saveTimer;
@@ -32,7 +33,7 @@ function persist() {
 }
 /* View only accounts (v1.3.1): quotes open and PDFs preview, nothing can be changed. */
 const readOnly = () => Drive.isConnected() && store.meta.syncMode === 'view';
-const VIEW_OK = new Set(['back', 'cat', 'closesheet', 'closeviewer', 'confirmok', 'connect', 'disconnect', 'drivebackups', 'export', 'kind', 'open', 'pdf', 'allpages', 'reauth', 'sharepdf', 'syncnow', 'syncpill', 'tab']);
+const VIEW_OK = new Set(['viewver', 'compare', 'back', 'cat', 'closesheet', 'closeviewer', 'confirmok', 'connect', 'disconnect', 'drivebackups', 'export', 'kind', 'open', 'pdf', 'allpages', 'reauth', 'sharepdf', 'syncnow', 'syncpill', 'tab']);
 function touchP(p) { p.updatedAt = nowISO(); persist(); }
 function touchS() { store.settings.updatedAt = nowISO(); persist(); }
 
@@ -372,7 +373,10 @@ VIEWS.project = () => {
   const s = store.settings;
   const sup = kindOf(p) === 'supervision';
   const tabs = [['quote', sup ? 'Bill' : 'Quote'], ['pay', sup ? 'Payment' : 'Payments'], ['terms', sup ? 'Notes' : 'Terms'], ['pdf', 'PDF']];
+  if (!sup) tabs.push(['versions', 'Versions']);
+  if (ui.tab === 'versions' && sup) ui.tab = 'quote';
   const head = `<section class="card qhead">
+    <div class="lbl">Details</div>
     <div class="meta"><span class="qno" data-calc="pno"></span>
       <select id="p_status" data-bind="p:status" data-re aria-label="Status" style="width:auto;padding:5px 8px;font-size:13px">${STATUSES.map(x => `<option ${x === p.status ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
     <input class="big" type="text" id="p_name" data-bind="p:name" value="${esc(p.name)}" aria-label="Project name">
@@ -382,6 +386,7 @@ VIEWS.project = () => {
       ${sup ? '' : `<label class="f">Category<select id="p_cat" data-bind="p:category">${s.categories.map(c => `<option ${c === p.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>`}
       <label class="f">${sup ? 'Bill' : 'Quote'} date<input type="date" id="p_date" data-bind="p:date" value="${p.date}"></label>
       ${sup ? '' : `<label class="f">Valid for (days) · till <span data-calc="pvalid"></span><input type="text" inputmode="numeric" id="p_valid" data-bind="p:validDays" data-int value="${p.validDays}"></label>`}
+      <label class="f">Studio project ID<input type="text" id="p_studio" data-bind="p:studioId" value="${esc(p.studioId || '')}" placeholder="Optional" autocomplete="off"></label>
     </div>
   </section>
   <div class="tabs"><div class="seg">${tabs.map(([k, l]) => `<button class="${ui.tab === k ? 'on' : ''}" data-act="tab" data-v="${k}">${l}</button>`).join('')}</div></div>`;
@@ -399,12 +404,25 @@ const TABS = {};
 TABS.quote = p => {
   if (kindOf(p) === 'supervision') return supTab(p);
   const tiers = p.mode === 'tiers';
-  return `<div class="row"><div class="seg small grow">
+  return `<div class="lbl">${tiers ? 'Quality options' : 'Bills'}</div>
+    <div class="row"><div class="seg small grow">
       <button class="${!tiers ? 'on' : ''}" data-act="mode" data-v="batches">Initial + additional bills</button>
       <button class="${tiers ? 'on' : ''}" data-act="mode" data-v="tiers">Quality options</button></div></div>
     ${p.sections.map((sec, i) => secCard(p, sec, i)).join('')}
-    <button class="btn block" data-act="addsec">${I.plus}${tiers ? 'Add option' : p.sections.length ? 'Add Additional Bill ' + billLetter(p.sections.length - 1) : 'Add Initial Bill'}</button>`;
+    <button class="btn block" data-act="addsec">${I.plus}${tiers ? 'Add option' : p.sections.length ? 'Add Additional Bill ' + billLetter(p.sections.length - 1) : 'Add Initial Bill'}</button>
+    ${p.sections.length ? totalsCard(p) : ''}`;
 };
+/* "Totals & payments" summary at the end of the Quote tab (v1.4.0) */
+function totalsCard(p) {
+  const tiers = p.mode === 'tiers';
+  const rows = p.sections.map((sec, i) => `<div class="totrow"><span>${esc(secTitle(p, i))}${tiers && p.selectedTier === sec.id ? ' · approved' : ''}</span><span class="money" data-calc="snet:${sec.id}"></span></div>`).join('');
+  return `<div class="lbl">Totals & payments</div>
+    <section class="card stack" id="totals">${rows}
+      <div class="totrow net"><span>${tiers ? (p.selectedTier ? 'Approved option' : 'Highest option') : 'Project total'} · excl. GST</span><span class="money" data-calc="ptotal"></span></div>
+      <div class="totrow"><span class="muted">Received</span><span class="money" data-calc="precv"></span></div>
+      <div class="totrow"><span class="muted">Balance</span><span class="money" data-calc="ppend"></span></div>
+      <button class="btn sm" data-act="tab" data-v="pay" style="justify-self:start">Payments</button></section>`;
+}
 function supTab(p) {
   const sec = p.sections[0]; const s = store.settings;
   const rows = sec.lines.map((l, j) => `<div class="line">
@@ -452,9 +470,11 @@ function secCard(p, sec, i) {
       <button class="iconbtn" data-act="secmenu" data-s="${sec.id}" aria-label="Section options">${I.more}</button></div>
     ${tiers ? `<label class="chosen"><input type="radio" name="tier" data-act="tier" data-s="${sec.id}" ${p.selectedTier === sec.id ? 'checked' : ''}> Client approved this option</label>` : ''}
     <div class="sec-b">
+      ${sec.lines.length ? `<div class="colh" aria-hidden="true"><span class="d">Description</span><span>Type</span><span>Seconds</span><span></span><span>₹ / sec</span><span>Amount</span></div>` : ''}
       ${lines}
       <button class="btn ghost" data-act="addline" data-s="${sec.id}" style="justify-self:start">${I.plus}Add line</button>
       <div class="sec-foot">
+        <div class="lbl sm">Totals & discount</div>
         <div class="grid2">
           <label class="f">Duration in TOTAL row<select id="dm_${sec.id}" data-bind="sec:${sec.id}:durMode" data-re>
             <option value="sum" ${sec.durMode === 'sum' ? 'selected' : ''}>Add up all lines</option>
@@ -504,6 +524,68 @@ TABS.pay = p => {
   ${!tiers && kindOf(p) !== 'supervision' ? `<section class="card"><label class="check"><input type="checkbox" id="pdf_pay" data-bind="pdf:showPayment" ${p.pdf.showPayment ? 'checked' : ''}> Show the payment status column on the PDF</label></section>` : ''}`;
 };
 
+/* ---------- versions (v1.4.0) ---------- */
+TABS.versions = p => {
+  const vs = versionsOf(p);
+  const when = iso => iso ? new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  const rows = vs.slice().reverse().map(v => `<div class="list-row" style="cursor:default"><div class="grow">
+      <b>${revName(v.rev)} · ${esc(quoteNo(store, v.p))}</b>
+      <small>${v.current ? 'Editing now' : 'Saved ' + when(v.savedAt)} · ${rs(projectValue(v.p))}</small></div>
+      <button class="btn sm" data-act="viewver" data-v="${v.rev}">View</button>
+      <button class="btn sm" data-act="pdf" data-rev="${v.rev}">PDF</button></div>`).join('');
+  const opt = sel => vs.map(v => `<option value="${v.rev}" ${v.rev === sel ? 'selected' : ''}>${revName(v.rev)}${v.current ? ' (now)' : ''}</option>`).join('');
+  return `<div class="lbl">Versions</div>
+    <section class="card">${rows}</section>
+    ${vs.length > 1 ? `<section class="card stack"><h2>Compare</h2>
+      <div class="row"><select id="cmpa" class="grow" aria-label="From">${opt(vs[vs.length - 2].rev)}</select><span class="muted">→</span>
+        <select id="cmpb" class="grow" aria-label="To">${opt(vs[vs.length - 1].rev)}</select><button class="btn primary" data-act="compare">Compare</button></div></section>` : ''}
+    <section class="card stack"><h2>New revision</h2>
+      <div class="muted" style="font-size:13px">Already sent this quote and need to change it? Start a revision. The sent version is kept here, and the number gets -R${p.rev + 1}.</div>
+      <button class="btn" data-act="newrev" style="justify-self:start">Start revision R${p.rev + 1}</button></section>`;
+};
+function versionHtml(v) {
+  const q = v.p, tiers = q.mode === 'tiers';
+  const line = l => `<tr><td>${esc(l.desc || '—')}</td><td class="r">${l.type === 'lump' ? '' : `${inr(num(l.sec))} × ${inr(num(l.rate))}`}</td><td class="r">${rs(lineAmount(l))}</td></tr>`;
+  const bills = q.sections.map((sec, i) => `<div class="vbill"><b>${esc(secTitle(q, i))}${tiers && q.selectedTier === sec.id ? ' · approved' : ''}</b>
+      <table class="vt"><thead><tr><th>Description</th><th class="r">Sec × Rate</th><th class="r">Amount</th></tr></thead><tbody>${sec.lines.map(line).join('')}</tbody></table>
+      ${secDiscount(sec) ? `<div class="totrow"><span class="muted">Discount</span><span class="money">− ${rs(secDiscount(sec))}</span></div>` : ''}
+      <div class="totrow"><span>Total</span><span class="money">${rs(secNet(sec))}</span></div></div>`).join('');
+  const notes = (q.blocks || []).filter(b => (b.items || []).length).map(b => `<details><summary>${esc(b.heading || b.title)}</summary><ul>${b.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul></details>`).join('');
+  return `<div class="muted" style="font-size:13px">${esc(q.name)} · ${esc(q.client || '')} · ${fmtDate(q.date)}</div>
+    ${bills}<div class="totrow net"><span>${tiers ? 'Option total' : 'Project total'}</span><span class="money">${rs(projectValue(q))}</span></div>${notes}`;
+}
+ACT.viewver = el => {
+  const p = curP(); const v = versionsOf(p).find(x => x.rev === num(el.dataset.v)); if (!v) return;
+  openSheet(`<h2>${revName(v.rev)} · ${esc(quoteNo(store, v.p))}</h2><div class="stack vview">${versionHtml(v)}</div>
+    <div class="acts"><button class="btn" data-act="closesheet">Close</button>
+    ${v.current ? '' : `<button class="btn" data-act="restorerev" data-v="${v.rev}">Restore</button>`}
+    <button class="btn primary" data-act="pdf" data-rev="${v.rev}">PDF</button></div>`);
+};
+ACT.compare = () => {
+  const p = curP(); const vs = versionsOf(p);
+  const a = vs.find(v => v.rev === num(document.getElementById('cmpa').value)), b = vs.find(v => v.rev === num(document.getElementById('cmpb').value));
+  if (!a || !b || a === b) return toast('Pick two different versions.');
+  const d = diffVersions(a.p, b.p);
+  const arrow = (x, y, f = rs) => `${f(x)} → <b>${f(y)}</b>`;
+  const lv = v => !v ? '' : v.sec !== undefined ? `${inr(v.sec)} sec × ${rs(v.rate)} = ${rs(v.amount)}` : rs(v.amount);
+  const tag = c => `<span class="tag ${c}">${{ added: 'Added', removed: 'Removed', changed: 'Changed' }[c]}</span>`;
+  const bills = d.bills.map(bl => `<div class="vbill"><div><b>${esc(bl.label)}</b> ${tag(bl.change)}</div>
+      <div class="totrow"><span class="muted">Bill total</span><span>${arrow(bl.netFrom, bl.netTo)}</span></div>
+      ${bl.discountFrom !== null && bl.discountFrom !== undefined ? `<div class="totrow"><span class="muted">Discount</span><span>${arrow(bl.discountFrom, bl.discountTo)}</span></div>` : ''}
+      ${bl.durFrom !== null && bl.durFrom !== undefined ? `<div class="totrow"><span class="muted">Screen time</span><span>${arrow(bl.durFrom, bl.durTo, x => x + ' sec')}</span></div>` : ''}
+      ${(bl.lines || []).map(l => `<div class="dline">${tag(l.change)} <b>${esc(l.desc || '—')}</b>${l.descFrom ? ` <span class="muted">(was “${esc(l.descFrom)}”)</span>` : ''}
+        <div class="muted">${l.change === 'added' ? lv(l.to) : l.change === 'removed' ? lv(l.from) : `${lv(l.from)} → <b>${lv(l.to)}</b>`}</div></div>`).join('')}</div>`).join('');
+  const fields = d.fields.map(x => `<div class="totrow"><span class="muted">${esc(x.label)}</span><span>${esc(x.from)} → <b>${esc(x.to)}</b></span></div>`).join('');
+  const notes = d.notes.map(n => `<div class="dline">${tag(n.change)} <b>${esc(n.title)}</b>${n.added.map(t => `<div class="add">+ ${esc(t)}</div>`).join('')}${n.removed.map(t => `<div class="del">− ${esc(t)}</div>`).join('')}</div>`).join('');
+  const none = !fields && !bills && !notes;
+  openSheet(`<h2>${revName(a.rev)} → ${revName(b.rev)}</h2><div class="stack vview" id="cmpout">
+    <div class="totrow net"><span>Project total</span><span>${arrow(d.totalFrom, d.totalTo)}</span></div>
+    ${d.totalTo !== d.totalFrom ? `<div class="muted" style="font-size:13px">${d.totalTo > d.totalFrom ? 'Up' : 'Down'} ${rs(Math.abs(d.totalTo - d.totalFrom))}</div>` : ''}
+    ${fields ? `<div class="lbl sm">Details</div>${fields}` : ''}${bills ? `<div class="lbl sm">Bills</div>${bills}` : ''}${notes ? `<div class="lbl sm">Notes</div>${notes}` : ''}
+    ${none ? '<div class="muted">No differences.</div>' : ''}</div>
+    <div class="acts"><button class="btn primary" data-act="closesheet">Done</button></div>`);
+};
+
 TABS.terms = p => {
   const s = store.settings;
   const place = { quote: 'Under quotation', breakdown: 'Under each breakdown', end: 'Last page' };
@@ -531,7 +613,6 @@ TABS.terms = p => {
 
 TABS.pdf = p => {
   const o = p.pdf;
-  const revs = (p.revisions || []).slice().reverse();
   return `<section class="card stack"><h2>Layout</h2>
     <div class="grid2">
       <label class="f">Title<input type="text" id="o_title" data-bind="pdf:title" value="${esc(o.title)}"></label>
@@ -547,12 +628,7 @@ TABS.pdf = p => {
     ${o.showGst !== false ? `<label class="f">GST line text<input type="text" id="o_gstt" data-bind="pdf:gstText" value="${esc(o.gstText)}"></label>` : ''}
     <button class="btn primary" data-act="pdf">${I.pdf}Preview & export PDF</button>
   </section>
-  ${kindOf(p) === 'supervision' ? '' : `<section class="card stack"><h2>Revisions</h2>
-    <div class="muted" style="font-size:13px">Already sent this quote and need to change it? Start a revision. The sent version is kept, and the number gets -R${p.rev + 1}.</div>
-    <button class="btn" data-act="newrev" style="justify-self:start">Start revision R${p.rev + 1}</button>
-    ${revs.map(r => `<div class="list-row" style="cursor:default"><div class="grow"><b>${esc(quoteNo(store, { ...p, rev: r.rev }))}</b><small>Saved ${new Date(r.savedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })} · ${rs(r.total || 0)}</small></div>
-      <button class="btn sm" data-act="restorerev" data-v="${r.rev}">Restore</button></div>`).join('')}
-  </section>`}`;
+`;
 };
 
 /* ---------- settings ---------- */
@@ -693,7 +769,6 @@ VIEWS.templates = () => {
 };
 
 /* ================= ACTIONS ================= */
-const ACT = {};
 ACT.back = () => {
   const up = { project: 'home', new: 'home', home: 'start', settings: 'start', blocks: 'settings', templates: 'settings' }[route.name] || 'start';
   go({ name: up, kind: ui.kind });
@@ -840,7 +915,7 @@ ACT.newrev = () => {
 ACT.restorerev = el => {
   const p = curP(); const r = p.revisions.find(x => x.rev === num(el.dataset.v));
   confirmBox(`Restore R${r.rev}?`, 'The current lines and notes are replaced with that version. The quote number stays the same.', 'Restore', () => {
-    Object.assign(p, clone(r.data)); touchP(p); render(); toast('Version restored.');
+    Object.assign(p, clone(r.data)); touchP(p); closeSheet(); render(); toast(`${revName(r.rev)} restored into ${quoteNo(store, p)}.`);
   });
 };
 
@@ -1057,8 +1132,10 @@ function downloadBlob(blob, name) {
 
 /* ================= PDF preview & export ================= */
 let lastPdf = null;
-ACT.pdf = async () => {
-  const p = curP();
+ACT.pdf = async el => {
+  const cur = curP(); const want = el?.dataset?.rev;
+  const ver = want !== undefined ? versionsOf(cur).find(v => v.rev === num(want)) : null;
+  const p = ver ? ver.p : cur; closeSheet();
   const v = document.createElement('div'); v.className = 'viewer'; v.id = 'viewer';
   v.innerHTML = `<header><button class="iconbtn" data-act="closeviewer" aria-label="Close">${I.x}</button>
       <div style="flex:1;min-width:0"><b>${esc(quoteNo(store, p))}</b><div class="muted" style="font-size:12px">${esc(p.name)}</div></div>
@@ -1070,7 +1147,7 @@ ACT.pdf = async () => {
   document.body.appendChild(v);
   try {
     const bytes = await QuotePDF.build(store, p);
-    lastPdf = { p, bytes, name: QuotePDF.fileName(store, p), folder: QuotePDF.folderName(store, p), n: 0 };
+    lastPdf = { p, bytes, name: QuotePDF.fileName(store, p), folder: QuotePDF.folderName(store, p), n: 0, current: !ver || ver.current };
     lastPdf.n = await renderPages(bytes, v.querySelector('.pages'));
     updatePageSel();
   } catch (err) {
@@ -1127,7 +1204,9 @@ async function saveToDrive(out, quiet) {
   if (!Drive.token()) { toast('Drive needs reconnecting. Tap the sync button at the top.'); return; }
   try {
     if (!quiet) toast('Saving to Drive…');
-    await Drive.savePdf(out.name, lastPdf.folder, out.bytes);
+    const r = await Drive.savePdf(out.name, lastPdf.folder, out.bytes);
+    const real = store.projects.find(x => x.id === lastPdf.p.id);
+    if (real && lastPdf.current && r?.id) { real.lastPdf = { id: r.id, name: out.name, at: nowISO() }; touchP(real); } // PDF link for Studio Console
     toast(`Saved to Drive › ${Drive.FOLDER} › PDF › ${lastPdf.folder}`, 3500);
   } catch (e) { toast('Drive save failed: ' + e.message, 4000); }
 }

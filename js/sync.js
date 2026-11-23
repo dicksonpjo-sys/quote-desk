@@ -161,7 +161,7 @@ const Drive = (() => {
     const canEdit = !primary || primary.capabilities?.canEdit !== false;
     state.mode = moving ? 'move' : iAmOwner ? 'owner' : !primary ? 'noaccess' : canEdit ? 'shared' : 'view';
     if (c.mode !== state.mode) { // switched between modes: forget old folder ids
-      for (const k of Object.keys(c)) if (k === 'backupRoot' || k.startsWith('m:') || k.startsWith('f:')) delete c[k];
+      for (const k of Object.keys(c)) if (k === 'backupRoot' || k === 'index' || k === 'indexText' || k.startsWith('m:') || k.startsWith('f:')) delete c[k];
       c.mode = state.mode;
     }
     // Folder that holds the data file is the root for PDFs and backups.
@@ -187,9 +187,10 @@ const Drive = (() => {
     const { c, primary, strays, source } = await locate(me);
     let merged = store;
     const sameAccount = store.meta.syncAccount === me.email && store.meta.syncFile === c.data;
-    if (primary && (!sameAccount || primary.modifiedTime !== store.meta.remoteModified)) {
+    if (primary && (state.mode === 'view' || !sameAccount || primary.modifiedTime !== store.meta.remoteModified)) {
       const remote = await json(`${API}/files/${primary.id}?alt=media&supportsAllDrives=true`);
-      merged = mergeStores(store, remote);
+      // View only: take Drive's copy as it is, so nothing changed on this phone can travel later
+      merged = state.mode === 'view' ? { ...remote, meta: store.meta } : mergeStores(store, remote);
     }
     if (state.mode === 'move' || state.mode === 'noaccess') { // read what we can, write nothing
       merged.meta = { ...(store.meta || {}), lastSync: nowISO(), syncAccount: me.email, syncMode: state.mode, syncFile: null, remoteModified: null };
@@ -217,7 +218,28 @@ const Drive = (() => {
     c.data = res.id; saveCache(me.email, c);
     Object.assign(merged.meta, { remoteModified: res.modifiedTime, lastSync: nowISO(), syncAccount: me.email, syncFile: res.id, syncMode: state.mode });
     await dailyBackup(me, blob).catch(e => console.warn('backup', e));
+    await writeIndex(me, c, merged).catch(e => console.warn('index', e));
     return merged;
+  }
+
+  /* Studio Console summary (v1.4.0): quote_desk_index.json next to the data file, rebuilt from the
+     merged quotes on every sync. The studio account creates it, so it owns it; Editor accounts only
+     overwrite it (the owner stays the same), which keeps it close to live. Skipped when unchanged. */
+  async function writeIndex(me, c, merged) {
+    if (!c.root || !['owner', 'shared'].includes(state.mode)) return null;
+    const idx = buildIndex(merged);
+    const text = JSON.stringify(idx);
+    if (c.indexText === text && c.index) return c.index;
+    const body = () => new Blob([JSON.stringify({ ...idx, generatedAt: nowISO(), generatedBy: me.email }, null, 1)], { type: 'application/json' });
+    let f = c.index ? { id: c.index } : null;
+    if (!f) f = (await list(`name='${INDEX_FILE}' and trashed=false and '${c.root}' in parents`)).find(x => !owner() || ownerOf(x) === owner()) || null;
+    if (f) {
+      try { await overwrite(f.id, body(), 'application/json'); }
+      catch (e) { delete c.index; saveCache(me.email, c); throw e; } // file was removed: look again next time
+    } else if (state.mode === 'owner') f = await uploadNew(INDEX_FILE, c.root, body(), 'application/json');
+    else return null; // not created yet: the studio account makes it on its next sync
+    c.index = f.id; c.indexText = text; saveCache(me.email, c);
+    return f.id;
   }
 
   async function subFolder(me, path) {
@@ -276,7 +298,7 @@ const Drive = (() => {
     // 2. PDFs and anything else in the old studio folder (old data files are not copied)
     progress('Copying PDFs…');
     const oldRoot = source.parents?.[0];
-    if (oldRoot) await copyTree(oldRoot, root, rep, n => n === DATA_FILE || /^(merged_|moved_to_)/.test(n));
+    if (oldRoot) await copyTree(oldRoot, root, rep, n => n === DATA_FILE || n === INDEX_FILE || /^(merged_|moved_to_)/.test(n));
     // 3. Backups, month by month, keeping their names and numbers
     progress('Copying backups…');
     const oldBk = (await list(`name='${BACKUP_FOLDER}' and mimeType='${FOLDER_MIME}' and trashed=false`)).find(f => ownerOf(f) === rep.from);
@@ -385,7 +407,8 @@ const Drive = (() => {
     const parent = await subFolder(me, ['PDF', folderName]);
     const blob = new Blob([bytes], { type: 'application/pdf' });
     const ex = await findChild(fileName, parent);
-    return ex ? overwrite(ex.id, blob, 'application/pdf') : uploadNew(fileName, parent, blob, 'application/pdf');
+    const r = ex ? await overwrite(ex.id, blob, 'application/pdf') : await uploadNew(fileName, parent, blob, 'application/pdf');
+    return { ...r, id: r.id || ex?.id };
   }
 
   /* ---------- Access manager (owner only, v1.3.1) ----------

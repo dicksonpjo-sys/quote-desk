@@ -41,6 +41,17 @@ Numbers follow the Indian financial year (April–March) and restart at 001 ever
   version can be restored.
 - **Duplicate**, **delete**, and **copy from an earlier quote** when creating a new one.
 
+### Versions (Versions tab)
+- Every sent version is kept: **Original, R1, R2…** plus the one being edited.
+- **View** any version, make its **PDF** (with its own number, e.g. without -R1 for the original),
+  or **Restore** it into the current quote.
+- **Compare** two versions: total before → after, lines added / removed / changed, discount, screen
+  time and note changes.
+- **Start revision** is on this tab.
+
+### Studio project ID
+- Optional, under Details. Links the quote to its project in Studio Console.
+
 ## 4. On-site supervision bills
 
 - Dated entries printed in date order.
@@ -74,6 +85,9 @@ Numbers follow the Indian financial year (April–March) and restart at 001 ever
   Share / Download, or **Save to Drive** (`VishwaaFX Quotes/PDF/<quote>/`).
 
 ## 7. Google Drive, accounts and backups
+
+- **Studio Console summary:** `quote_desk_index.json` in the studio folder is rebuilt on every sync
+  from the live quotes (no PDF needed) and read by Studio Console. No bank details.
 
 - **Sign-in lock:** the app opens only after signing in with an allowed Google account
   (vishwaafxacc, or an account on its Who has access list). Others see a sign-in screen only.

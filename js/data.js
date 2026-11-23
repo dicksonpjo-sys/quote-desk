@@ -1,7 +1,7 @@
 /* VishwaaFX Quote Desk — data model, defaults, calculations */
 'use strict';
 
-const APP_VERSION = '1.3.2';
+const APP_VERSION = '1.4.0';
 const STORE_KEY = 'vfxq.data.v2';
 
 const uid = (p = 'id') => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -349,6 +349,91 @@ function mergeStores(a, b) {
     const k = kindOf(p) + p.fy + '/' + p.seq;
     if (seen.has(k)) { p.seq = nextSeq(out, p.fy, kindOf(p)); p.updatedAt = nowISO(); p.renumbered = true; }
     seen.set(kindOf(p) + p.fy + '/' + p.seq, p.id);
+  }
+  return out;
+}
+
+/* ---------------- Studio Console summary (v1.4.0) ----------------
+   quote_desk_index.json, next to the data file. Read by Studio Console; built from the live quote
+   data on every sync, so it is current even when no PDF was saved. Never holds bank details. */
+const INDEX_FILE = 'quote_desk_index.json';
+function indexBill(p, sec, i) {
+  const sup = kindOf(p) === 'supervision';
+  return {
+    label: sup ? 'Bill' : secLabel(p, i), title: (sec.name || '').trim(),
+    gross: secGross(sec), discount: secDiscount(sec), amount: secNet(sec),
+    screenTimeSec: sup ? null : secDuration(sec),
+    payment: { status: sec.pay?.status || 'Pending', received: secReceived(sec), date: sec.pay?.date || null }
+  };
+}
+function buildIndex(store) {
+  const quotes = store.projects.filter(p => !p.deleted).map(p => {
+    const sup = kindOf(p) === 'supervision', tiers = p.mode === 'tiers';
+    // Quality options: only the option the client approved is reported (Dickson, 23 Nov 2026).
+    const chosen = tiers ? p.sections.findIndex(s => s.id === p.selectedTier) : -1;
+    const bills = tiers ? (chosen >= 0 ? [indexBill(p, p.sections[chosen], chosen)] : []) : p.sections.map((s, i) => indexBill(p, s, i));
+    const total = tiers ? (chosen >= 0 ? secNet(p.sections[chosen]) : null) : projectValue(p);
+    const received = bills.reduce((a, b) => a + b.payment.received, 0);
+    return {
+      id: p.id, quoteNo: quoteNo(store, p), kind: kindOf(p), rev: p.rev || 0,
+      studioProjectId: (p.studioId || '').trim() || null,
+      project: p.name, client: p.client || '', clientLabel: p.clientLabel || 'Production', category: sup ? null : p.category,
+      status: p.status, createdAt: p.createdAt, quoteDate: p.date, validTill: sup ? null : validTill(p),
+      layout: sup ? 'supervision' : tiers ? 'options' : 'bills', optionApproved: tiers ? chosen >= 0 : null,
+      total, received, due: total === null ? null : Math.max(0, total - received), committed: isCommitted(p),
+      bills, updatedAt: p.updatedAt,
+      pdf: p.lastPdf?.id ? { name: p.lastPdf.name, savedAt: p.lastPdf.at, link: `https://drive.google.com/file/d/${p.lastPdf.id}/view` } : null
+    };
+  }).sort((a, b) => String(b.quoteDate).localeCompare(String(a.quoteDate)) || a.quoteNo.localeCompare(b.quoteNo));
+  return { schema: 1, app: 'VishwaaFX Quote Desk', appVersion: APP_VERSION, currency: 'INR', gst: 'excluded', quotes };
+}
+
+/* ---------------- Versions (v1.4.0) ----------------
+   p.revisions[] holds each sent version ({ rev, savedAt, total, data }); the quote itself is the
+   version being edited. Sections, lines and notes keep their ids across versions, so they can be
+   matched one to one. */
+const REV_FIELDS = ['name', 'client', 'date', 'validDays', 'sections', 'blocks', 'pdf', 'singlePage', 'signatoryId', 'mode', 'selectedTier'];
+const revName = rev => rev ? 'R' + rev : 'Original';
+function versionsOf(p) {
+  const saved = (p.revisions || []).map(r => ({ rev: r.rev, savedAt: r.savedAt, current: false, p: { ...p, ...clone(r.data), rev: r.rev, revisions: [] } }));
+  return [...saved, { rev: p.rev || 0, savedAt: p.updatedAt, current: true, p }].sort((a, b) => a.rev - b.rev);
+}
+function diffVersions(a, b) {
+  const out = { totalFrom: projectValue(a), totalTo: projectValue(b), fields: [], bills: [], notes: [] };
+  const f = (label, x, y, fmt = v => v ?? '') => { if (String(fmt(x)) !== String(fmt(y))) out.fields.push({ label, from: String(fmt(x)), to: String(fmt(y)) }); };
+  f('Project', a.name, b.name); f(a.clientLabel || 'Client', a.client, b.client); f('Date', a.date, b.date, fmtDate);
+  f('Valid for (days)', a.validDays, b.validDays); f('Layout', a.mode, b.mode, m => m === 'tiers' ? 'Quality options' : 'Bills');
+  f('Pages', a.singlePage, b.singlePage, s => s ? 'Single page' : 'Summary + breakdown');
+  const optName = p => { const i = p.sections.findIndex(s => s.id === p.selectedTier); return i >= 0 ? secLabel(p, i) : 'None'; };
+  if (a.mode === 'tiers' || b.mode === 'tiers') f('Approved option', optName(a), optName(b));
+  const lineVal = l => l.type === 'lump' ? { amount: lineAmount(l) } : { sec: num(l.sec), rate: num(l.rate), amount: lineAmount(l) };
+  const ids = [...new Set([...a.sections.map(s => s.id), ...b.sections.map(s => s.id)])];
+  for (const id of ids) {
+    const ia = a.sections.findIndex(s => s.id === id), ib = b.sections.findIndex(s => s.id === id);
+    const sa = a.sections[ia], sb = b.sections[ib];
+    const label = sb ? secTitle(b, ib) : secTitle(a, ia);
+    if (!sa || !sb) { out.bills.push({ label, change: sa ? 'removed' : 'added', netFrom: sa ? secNet(sa) : 0, netTo: sb ? secNet(sb) : 0, lines: [] }); continue; }
+    const lines = [];
+    const lids = [...new Set([...sa.lines.map(l => l.id), ...sb.lines.map(l => l.id)])];
+    for (const lid of lids) {
+      const la = sa.lines.find(l => l.id === lid), lb = sb.lines.find(l => l.id === lid);
+      if (!la || !lb) { lines.push({ desc: (lb || la).desc, change: la ? 'removed' : 'added', from: la ? lineVal(la) : null, to: lb ? lineVal(lb) : null }); continue; }
+      const va = lineVal(la), vb = lineVal(lb);
+      if (la.desc !== lb.desc || JSON.stringify(va) !== JSON.stringify(vb)) lines.push({ desc: lb.desc, descFrom: la.desc !== lb.desc ? la.desc : null, change: 'changed', from: va, to: vb });
+    }
+    const discChanged = sa.discountType !== sb.discountType || String(sa.discount) !== String(sb.discount);
+    const durChanged = secDuration(sa) !== secDuration(sb);
+    if (lines.length || discChanged || durChanged || secNet(sa) !== secNet(sb) || (sa.name || '') !== (sb.name || ''))
+      out.bills.push({ label, change: 'changed', netFrom: secNet(sa), netTo: secNet(sb), discountFrom: discChanged ? secDiscount(sa) : null, discountTo: discChanged ? secDiscount(sb) : null,
+        durFrom: durChanged ? secDuration(sa) : null, durTo: durChanged ? secDuration(sb) : null, lines });
+  }
+  const bids = [...new Set([...(a.blocks || []).map(x => x.id), ...(b.blocks || []).map(x => x.id)])];
+  for (const id of bids) {
+    const xa = (a.blocks || []).find(x => x.id === id), xb = (b.blocks || []).find(x => x.id === id);
+    if (!xa || !xb) { out.notes.push({ title: (xb || xa).title, change: xa ? 'removed' : 'added', added: [], removed: [] }); continue; }
+    const ia = xa.items || [], ib = xb.items || [];
+    const added = ib.filter(t => !ia.includes(t)), removed = ia.filter(t => !ib.includes(t));
+    if (added.length || removed.length || xa.heading !== xb.heading) out.notes.push({ title: xb.title, change: 'changed', added, removed });
   }
   return out;
 }
