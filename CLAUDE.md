@@ -6,7 +6,7 @@ must not break, and how to test and ship a change.
 - **Owner:** Dickson P Jo (VishwaaFX, Kochi). Talks in short messages; wants to see what you are
   doing as you do it, and to approve anything that changes live data or goes live.
 - **Live app:** https://dicksonpjo-sys.github.io/quote-desk/ (GitHub Pages, `main` branch, root folder)
-- **Current version:** v1.4.0 (`APP_VERSION` in `js/data.js`)
+- **Current version:** v1.4.1 (`APP_VERSION` in `js/data.js`)
 - **Accounts:** studio data owner **vishwaafxacc@gmail.com**; extra users **vishwaafx@gmail.com** and
   **dicksonpjo@gmail.com** (both Editor). Dickson dictates by voice, so emails can arrive misspelt
   ("visualfx", "dixonpjo"); these three are the real ones.

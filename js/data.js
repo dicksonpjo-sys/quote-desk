@@ -1,7 +1,7 @@
 /* VishwaaFX Quote Desk — data model, defaults, calculations */
 'use strict';
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.4.1';
 const STORE_KEY = 'vfxq.data.v2';
 
 const uid = (p = 'id') => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -360,7 +360,7 @@ const INDEX_FILE = 'quote_desk_index.json';
 function indexBill(p, sec, i) {
   const sup = kindOf(p) === 'supervision';
   return {
-    label: sup ? 'Bill' : secLabel(p, i), title: (sec.name || '').trim(),
+    id: sec.id, label: sup ? 'Bill' : secLabel(p, i), title: (sec.name || '').trim(),
     gross: secGross(sec), discount: secDiscount(sec), amount: secNet(sec),
     screenTimeSec: sup ? null : secDuration(sec),
     payment: { status: sec.pay?.status || 'Pending', received: secReceived(sec), date: sec.pay?.date || null }

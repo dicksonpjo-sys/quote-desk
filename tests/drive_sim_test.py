@@ -320,6 +320,7 @@ async def main():
         await sync(A)
         check('index: created by the studio account, next to the data file', [(f['owner'], DRIVE[f['parents'][0]]['name']) for f in idx_files()], [(NEW, 'VishwaaFX Quotes')])
         check('index: one entry per live quote', sorted(q['project'] for q in idx()['quotes']), sorted(await names(A)))
+        check('index: every bill in the Drive file has its id (v1.4.1)', all(b.get('id') for q in idx()['quotes'] for b in q['bills']), True)
         check('index: no bank details', bool(re.search(r'accNo|ifsc|accName', idx_files()[0]['content'])), False)
         await add(V2, 'Index live test'); await sync(V2)
         check('index: an Editor sync updates it at once (owner has not synced)', 'Index live test' in [q['project'] for q in idx()['quotes']], True)

@@ -154,5 +154,24 @@ eq('offline duplicate: later renumbered', [byId.c2.seq, byId.c2.renumbered], [6,
   eq('compare: same version = no differences', [same.fields.length, same.bills.length, same.notes.length], [0, 0, 0]);
 }
 
+// ---- v1.4.1: every bill in the Studio Console index carries its stable id ----
+{
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'fixtures', 'sample.js'), 'utf8') + '\n;this.sampleProjects = sampleProjects;', ctx);
+  const st = A.emptyStore(); ctx.sampleProjects(st);
+  const ix = A.buildIndex(st);
+  const bills = ix.quotes.flatMap(q => q.bills);
+  eq('index ids: every bill on the sample store has a non-empty id', bills.length > 0 && bills.every(b => typeof b.id === 'string' && b.id.length > 0), true);
+  eq('index ids: id is the first field of each bill', bills.every(b => Object.keys(b)[0] === 'id'), true);
+  const p = st.projects.find(x => !x.deleted && x.mode !== 'tiers' && (x.kind || 'quote') === 'quote' && x.sections.length >= 3);
+  const before = A.buildIndex(st).quotes.find(q => q.id === p.id).bills;
+  eq('index ids: third bill starts as Additional Bill B', before[2].label, 'Additional Bill B');
+  const thirdId = before[2].id;
+  p.sections.splice(1, 1); // delete the quote's second bill (Additional Bill A)
+  const after = A.buildIndex(st).quotes.find(q => q.id === p.id).bills;
+  const moved = after.find(b => b.id === thirdId);
+  eq('index ids: after deleting the second bill, the third keeps its id and becomes Additional Bill A', [after[1].id === thirdId, moved && moved.label], [true, 'Additional Bill A']);
+  eq('index ids: schema stays 1', ix.schema, 1);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

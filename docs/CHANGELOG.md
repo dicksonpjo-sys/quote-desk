@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.4.1 — 23 Nov 2026
+- Studio Console index: each bill carries its id.
+
 ## v1.4.0 — 23 Nov 2026
 Three planned updates in one release (1.4 + 1.5 + 1.6, Dickson's call).
 - **Studio Console link.** `quote_desk_index.json` next to the data file, rebuilt from live quote data on every sync: quote no., project, client, category, status, dates, total, received, due, Studio project ID, PDF link, and every bill (Initial Bill, Additional Bill A, B…) with amount, discount, screen time and payment. Quality-option quotes report only the approved option. No bank details. Created by vishwaafxacc; Editor accounts keep it up to date. Format: `docs/STUDIO_CONSOLE_INDEX.md`.

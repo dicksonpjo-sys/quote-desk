@@ -1,4 +1,4 @@
-# quote_desk_index.json — format for Studio Console (v1.4.0)
+# quote_desk_index.json — format for Studio Console (v1.4.1)
 
 Where: `My Drive/VishwaaFX Quotes/quote_desk_index.json` in **vishwaafxacc@gmail.com**, next to
 `vishwaafx_quotes_data.json`. Studio Console only **reads** it.
@@ -30,6 +30,7 @@ Where: `My Drive/VishwaaFX Quotes/quote_desk_index.json` in **vishwaafxacc@gmail
     "received": 1330650, "due": 63000,
     "committed": true,                 // counts as business (Approved / In Progress / Closed; supervision from Sent)
     "bills": [{
+      "id": "sec_…",                   // stable bill id: never changes when bills are added, removed or reordered
       "label": "Initial Bill",         // then "Additional Bill A", "B"…; options: the option name; supervision: "Bill"
       "title": "",                     // optional title typed after the label, e.g. "Trailer & Teaser"
       "gross": 900000, "discount": 0, "amount": 900000,
