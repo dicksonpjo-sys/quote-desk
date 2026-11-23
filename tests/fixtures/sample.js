@@ -1,4 +1,4 @@
-/* Sample projects rebuilt from the three existing quotations (loaded on demand). */
+/* Test-only quotes rebuilt from real PDFs. Not loaded by the app since v1.3.2 (the code is public). */
 'use strict';
 
 function sampleProjects(store) {

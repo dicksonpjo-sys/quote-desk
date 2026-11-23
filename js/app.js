@@ -51,8 +51,51 @@ function go(r, push = true) {
 }
 window.addEventListener('popstate', e => { closeSheet(); ACT.closeviewer(); route = e.state || { name: 'start' }; if (route.kind) ui.kind = route.kind; render(true); });
 
+/* ---------------- sign-in lock (v1.3.2) ----------------
+   The app is public code, so nothing opens until a Google account that can open the studio data
+   (vishwaafxacc, or anyone on its Who has access list) has been checked against Drive on this browser.
+   A checked browser keeps working offline for up to 30 days without a new check. */
+const GATE_KEY = 'vfxq.allowed', GATE_DAYS = 30;
+const gateGet = () => { try { return JSON.parse(localStorage.getItem(GATE_KEY) || 'null'); } catch { return null; } };
+const gateSet = email => { try { localStorage.setItem(GATE_KEY, JSON.stringify({ email, at: Date.now() })); } catch {} };
+const gateClear = () => { try { localStorage.removeItem(GATE_KEY); } catch {} };
+let lockMsg = '', lockBtn = '';
+function unlocked() {
+  const g = gateGet();
+  if (!g || !Drive.isConnected()) return false;
+  const who = Drive.user()?.email;
+  if (who && who !== g.email) return false; // switched to another account: check it first
+  return Date.now() - g.at < GATE_DAYS * 864e5;
+}
+/* After every sync: keep the browser open for allowed accounts, lock and wipe for the rest. */
+function applyGate() {
+  const mode = store.meta.syncMode, who = store.meta.syncAccount;
+  if (['owner', 'shared', 'view', 'move'].includes(mode) && who) { gateSet(who); lockMsg = ''; return true; }
+  if (mode === 'noaccess') {
+    gateClear(); store = emptyStore(); store.meta = { syncMode: 'noaccess', syncAccount: who }; saveLocal(store); route = { name: 'start' };
+    lockBtn = 'Sign in with another account';
+    lockMsg = `<b>${esc(who || 'This account')}</b> does not have access to the VishwaaFX studio data. Ask ${esc(Drive.owner())} to add it, or sign in with another account.`;
+  }
+  return false;
+}
+function lockView() {
+  const connected = Drive.isConnected(), online = navigator.onLine;
+  const who = Drive.user()?.email;
+  let msg, btn;
+  if (lockMsg) { msg = lockMsg; btn = `<button class="btn primary" data-act="lockauth">${lockBtn}</button>`; }
+  else if (!online) { msg = 'Connect to the internet once so this account can be checked.'; btn = ''; }
+  else if (connected && Drive.token() && !Drive.needsUpgrade()) { msg = `Checking access${who ? ' for <b>' + esc(who) + '</b>' : ''}…`; btn = `<button class="btn" data-act="lockauth">Use another account</button>`; }
+  else { msg = 'Only VishwaaFX studio accounts can open this app. Sign in with your Google account to continue.'; btn = `<button class="btn primary" data-act="lockauth">Sign in with Google</button>`; }
+  return `<main class="wrap lock"><section class="card stack" style="text-align:center;margin-top:12vh">
+    <img src="icons/mark.png" alt="" style="width:56px;height:56px;margin:0 auto">
+    <h2 style="justify-content:center">VishwaaFX Quote Desk</h2>
+    <div class="muted" style="font-size:14px">${msg}</div>${btn}
+    <div class="muted" style="font-size:12px">Accounts are added by the studio account in Settings → Who has access.</div></section></main>`;
+}
+
 /* ---------------- render ---------------- */
 function render(resetScroll = false) {
+  if (!unlocked()) { closeSheet(); ACT.closeviewer?.(); $app().innerHTML = lockView(); document.body.classList.remove('readonly'); return; }
   const y = window.scrollY;
   const v = VIEWS[route.name] ? VIEWS[route.name]() : VIEWS.start();
   $app().innerHTML = `
@@ -159,6 +202,7 @@ document.addEventListener('change', e => {
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
   const fn = ACT[el.dataset.act]; if (!fn) return;
+  if (!unlocked() && el.dataset.act !== 'lockauth') return;
   if (el.tagName !== 'INPUT') e.preventDefault();
   if (readOnly() && !VIEW_OK.has(el.dataset.act) && !(el.dataset.act === 'go' && el.dataset.r !== 'new')) return toast(`View only access. Ask ${Drive.owner()} for Editor access to change quotes.`, 3500);
   fn(el, e);
@@ -535,7 +579,7 @@ function driveCard() {
         <button class="btn primary" data-act="share">Add</button></div>
       <div class="infobox" style="font-size:12.5px">A new account must first be added as a test user in Google Cloud (Google Auth Platform → Audience → Test users), or Google will not let it sign in.</div></div>` : '';
   return `${box}
-    <div class="row"><button class="btn primary" data-act="syncnow">Sync now</button><button class="btn" data-act="reauth">${Drive.needsUpgrade() ? 'Reconnect (needed)' : 'Switch account / Reconnect'}</button><button class="btn danger" data-act="disconnect">Disconnect</button></div>
+    <div class="row"><button class="btn primary" data-act="syncnow">Sync now</button><button class="btn" data-act="reauth">${Drive.needsUpgrade() ? 'Reconnect (needed)' : 'Switch account / Reconnect'}</button><button class="btn danger" data-act="disconnect">Sign out</button></div>
     ${share}`;
 }
 VIEWS.settings = () => {
@@ -606,7 +650,7 @@ VIEWS.settings = () => {
     <label class="f">Appearance<select id="theme" data-act-change="theme"><option value="system" ${theme === 'system' ? 'selected' : ''}>Match phone / computer</option><option value="light" ${theme === 'light' ? 'selected' : ''}>Light</option><option value="dark" ${theme === 'dark' ? 'selected' : ''}>Dark</option></select></label>
     <div class="row"><button class="btn sm" data-act="export">Download backup</button><label class="btn sm" for="importfile">Restore from a file</label><input type="file" id="importfile" accept="application/json,.json" hidden data-act-change="import">
     ${Drive.isConnected() ? `${store.meta.syncMode === 'owner' ? '<button class="btn sm" data-act="backupnow">Back up to Drive now</button>' : ''}<button class="btn sm" data-act="drivebackups">Restore a Drive backup</button>` : ''}
-    ${store.projects.some(p => p.sample && !p.deleted) ? '' : '<button class="btn sm" data-act="samples">Add the 3 starter quotes</button>'}</div>
+</div>
     <div class="muted" style="font-size:12px">VishwaaFX Quote Desk v${APP_VERSION}</div>
   </section>`;
   return { title: 'Settings', back: true, body };
@@ -830,6 +874,10 @@ ACT.blksave = el => {
 };
 
 /* settings actions */
+ACT.lockauth = () => {
+  if (IN_ARTIFACT) return toast('Sign-in works in the installed app.');
+  try { Drive.authorize(); } catch (e) { toast(e.message, 4000); }
+};
 ACT.connect = () => {
   const id = document.getElementById('cid').value.trim();
   if (!/\.apps\.googleusercontent\.com$/.test(id)) { toast('Paste the Client ID ending in .apps.googleusercontent.com'); return; }
@@ -837,7 +885,7 @@ ACT.connect = () => {
   Drive.setClientId(id); try { sessionStorage.setItem('vfxq.route', JSON.stringify(route)); } catch {} Drive.authorize();
 };
 ACT.reauth = () => Drive.authorize();
-ACT.disconnect = () => confirmBox('Disconnect Google Drive?', 'Data stays on this device and in Drive. Sync stops until you connect again.', 'Disconnect', () => { Drive.disconnect(); setSync('local'); render(); });
+ACT.disconnect = () => confirmBox('Sign out?', 'The app locks on this device until an allowed Google account signs in again. Quotes stay in Drive.', 'Sign out', () => { Drive.disconnect(); gateClear(); setSync('local'); render(); });
 ACT.syncnow = () => runSync(true);
 ACT.syncpill = () => {
   if (syncState === 'off') { if (Drive.clientId()) Drive.authorize(); else go({ name: 'settings' }); }
@@ -874,7 +922,6 @@ ACT.export = () => {
   const blob = new Blob([JSON.stringify({ ...store, meta: undefined }, null, 1)], { type: 'application/json' });
   downloadBlob(blob, `vishwaafx_quotes_backup_${todayStr()}.json`);
 };
-ACT.samples = () => { sampleProjects(store); touchS(); render(); toast('Starter quotes added.'); };
 
 document.addEventListener('change', async e => {
   const el = e.target;
@@ -1100,18 +1147,22 @@ async function runSync(manual = false) {
   syncing = true; setSync('busy');
   try {
     const before = JSON.stringify(store.projects); const modeBefore = store.meta.syncMode;
+    const wasOpen = unlocked();
     const merged = await Drive.sync(store);
     store = merged; saveLocal(store); setSync('ok');
+    if (!applyGate()) { render(true); return; }
+    if (!wasOpen) { render(true); return; }
     if (store.meta.syncMode !== modeBefore) render();
     else if (JSON.stringify(store.projects) !== before && ['home', 'start', 'settings'].includes(route.name)) render();
     else if (route.name === 'settings') render();
     if (manual) toast('Synced with Google Drive.');
   } catch (e) {
     console.warn(e); setSync(e.code === 'AUTH' ? 'off' : 'err');
+    if (!unlocked()) { lockBtn = 'Sign in with Google'; lockMsg = `Could not check access: ${esc(e.message)}.`; render(); }
     if (manual) toast(e.code === 'AUTH' ? e.message + '. Tap “Reconnect Drive”.' : 'Sync failed: ' + e.message, 4000);
   } finally { syncing = false; }
 }
-window.addEventListener('online', () => runSync());
+window.addEventListener('online', () => { if (!unlocked()) render(); runSync(); });
 window.addEventListener('offline', () => setSync('offline'));
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') runSync(); else { clearTimeout(saveTimer); saveLocal(store); } });
 
@@ -1124,14 +1175,14 @@ function boot() {
   applyTheme();
   const msg = Drive.handleRedirect();
   store = loadStore();
-  if (!store) { store = emptyStore(); sampleProjects(store); saveLocal(store); }
+  if (!store) { store = emptyStore(); saveLocal(store); }
   try { const r = JSON.parse(sessionStorage.getItem('vfxq.route') || 'null'); if (r && VIEWS[r.name]) { route = r; if (r.kind) ui.kind = r.kind; } } catch {}
   try { history.replaceState(route, ''); } catch {}
   syncState = Drive.isConnected() ? (Drive.token() && !Drive.needsUpgrade() ? 'busy' : 'off') : 'local';
   render(true);
-  if (msg === 'connected') { toast('Google Drive connected. Syncing…'); runSync(); }
+  if (msg === 'connected') { gateClear(); render(true); runSync(); } // a new sign-in is always checked first
   else if (msg === 'reconnect') { setSync('off'); }
-  else if (msg) toast(msg, 4000);
+  else if (msg) { if (!unlocked()) { lockBtn = 'Sign in with Google'; lockMsg = esc(msg); render(); } else toast(msg, 4000); }
   else if (!Drive.maybeSilentRefresh()) runSync();
   if ('serviceWorker' in navigator && !IN_ARTIFACT && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 }

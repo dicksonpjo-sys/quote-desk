@@ -6,7 +6,7 @@ must not break, and how to test and ship a change.
 - **Owner:** Dickson P Jo (VishwaaFX, Kochi). Talks in short messages; wants to see what you are
   doing as you do it, and to approve anything that changes live data or goes live.
 - **Live app:** https://dicksonpjo-sys.github.io/quote-desk/ (GitHub Pages, `main` branch, root folder)
-- **Current version:** v1.3.1 (`APP_VERSION` in `js/data.js`)
+- **Current version:** v1.3.2 (`APP_VERSION` in `js/data.js`)
 - **Accounts:** studio data owner **vishwaafxacc@gmail.com**; extra users **vishwaafx@gmail.com** and
   **dicksonpjo@gmail.com** (both Editor). Dickson dictates by voice, so emails can arrive misspelt
   ("visualfx", "dixonpjo"); these three are the real ones.
@@ -29,7 +29,7 @@ Two kinds of documents, chosen on the start screen:
 | `index.html` | Shell. Loads every script with `?v=<version>`; bump these on each release. |
 | `js/config.js` | Google OAuth Client ID, `VFXQ_DATA_OWNER` (studio account `vishwaafxacc@gmail.com`) and `VFXQ_PREVIOUS_OWNERS` (`vishwaafx@gmail.com`). |
 | `js/data.js` | `APP_VERSION`, data model, default settings (company, banks, note blocks, templates), number formats, calculations, quote numbering, `mergeStores`. |
-| `js/sample.js` | Starter quotes rebuilt from real PDFs (Law and Order, Moshi Moshi, 40 Days, Mayan). Fixed ids `sample_*`. |
+| `tests/fixtures/sample.js` | Test-only quotes rebuilt from real PDFs (fixed ids `sample_*`). Not loaded by the app since v1.3.2: the repo and site are public. |
 | `js/sync.js` | Google sign-in (OAuth token redirect flow) and every Drive call: shared studio file, merge, PDFs, versioned backups, sharing. |
 | `js/pdf.js` | PDF builder (pdf-lib). Monochrome letterhead, summary page + breakdown pages, single page, supervision bill, page selection. |
 | `js/app.js` | All screens, actions, PDF viewer (pdf.js), sync loop, restore, boot. |
@@ -73,6 +73,11 @@ Line    = { id, desc, type: 'rate'|'lump', sec, rate, amount, date }   // date u
   owner only. Grant and revoke always act on BOTH the studio folder and the backups folder; revoke
   re-reads both to verify. Google Cloud test users cannot be added through the API, so the UI says to
   add them by hand (Google Auth Platform → Audience → Test users).
+- **Sign-in lock (v1.3.2):** nothing renders until `unlocked()` (in `js/app.js`): a `vfxq.allowed`
+  record for the signed-in account, set by `applyGate()` after a sync in mode owner/shared/view/move,
+  valid 30 days. Mode `noaccess` clears it and wipes the local store. A new sign-in clears it first.
+  This is a screen lock, not security: the code is public, so **never put studio data (bank numbers,
+  client quotes, prices) in the repo**. The real protection is Drive permissions + Google test users.
 - **Merge, never overwrite blindly:** `mergeStores` keeps the newest `updatedAt` per project and per
   settings. Every edit must call `touchP(p)` or `touchS()` so its timestamp moves. Deletes are soft
   (`deleted: true`) so they sync.
@@ -155,6 +160,8 @@ Run it after any change to `js/sync.js`, `mergeStores` or restore.
 - **v1.3.1 — Access manager.** Settings → Who has access (owner only): list, Add (Editor / View only),
   Remove from both folders; read-only ownership line for other accounts; View only mode; fix for the
   old owner making a new data file after the move. Tests in `tests/drive_sim_test.py` ("ACCESS TEST").
+- **v1.3.2 — Sign-in lock.** Only allowed accounts open the app; removed accounts are locked and wiped;
+  bank numbers and sample quotes taken out of the public code.
 - **v1.4.0 — Studio Console link.** Read-only `quote_desk_index.json` next to the data file (quote no.,
   kind, project, client, category, created/quote/valid-till dates, status, total, received, due,
   updated, PDF link; no bank details). Optional Studio project ID on each quote. Studio Console runs

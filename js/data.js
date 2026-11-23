@@ -1,7 +1,7 @@
 /* VishwaaFX Quote Desk — data model, defaults, calculations */
 'use strict';
 
-const APP_VERSION = '1.3.1';
+const APP_VERSION = '1.3.2';
 const STORE_KEY = 'vfxq.data.v2';
 
 const uid = (p = 'id') => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -71,9 +71,9 @@ function defaultSettings() {
     ],
     banks: [
       { id: 'bank_studio', label: 'Studio – Bank of India', accName: 'VISHWAA.FX STUDIO PRIVATE LIMITED', bank: 'Bank Of India',
-        accNo: '850420110000274', ifsc: 'BKID0008504', branch: 'Ernakulam HSG Fin', mobile: '' },
+        accNo: '', ifsc: '', branch: '', mobile: '' }, // real numbers live in Drive, never in this public code
       { id: 'bank_dickson', label: 'Dickson – HDFC', accName: 'Dickson P J', bank: 'HDFC',
-        accNo: '50100612144110', ifsc: 'HDFC0000510', branch: 'Banerji Road', mobile: '+91 99 1655 1561' }
+        accNo: '', ifsc: '', branch: '', mobile: '' }
     ],
     defaultBank: { quote: 'bank_studio', supervision: 'bank_dickson' },
     supPrefix: 'SUP',

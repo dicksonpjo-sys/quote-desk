@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.2 — 23 Nov 2026
+- **Sign-in lock.** The app opens only for Google accounts that can open the studio data: vishwaafxacc@gmail.com and the accounts in its Settings → Who has access. Any other account, or a browser that never signed in, sees only a sign-in screen. The check runs against Drive every time the app opens online; a checked phone keeps working offline for up to 30 days.
+- An account that is removed from Who has access is locked out and its quotes are wiped from that phone at the next online open.
+- Bank account numbers and the sample quotes are no longer in the app's public code. The real bank details come from the studio settings in Drive after sign-in. (The sample quotes moved to `tests/fixtures/` for testing only.)
+- "Disconnect" is now "Sign out" and locks the app on that device.
+
 ## v1.3.1 — 23 Nov 2026
 - **Who has access** (Settings, studio account only): lists every Google account that can open the studio data and backups folders, with Owner / Editor / View only. Add an account as Editor or View only; Remove takes it off both folders and checks that it is gone. An account on only one of the two folders is flagged. A note reminds that new accounts must first be test users in Google Cloud (Google Auth Platform → Audience).
 - Other accounts see one line: who owns the studio data and whether they have Editor or View only access.

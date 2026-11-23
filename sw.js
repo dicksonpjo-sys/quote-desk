@@ -1,7 +1,7 @@
 /* Offline cache for the app shell. Drive API calls are never cached. */
-const CACHE = 'quote-desk-v1.3.1';
+const CACHE = 'quote-desk-v1.3.2';
 const SHELL = ['./', 'index.html', 'css/app.css', 'manifest.webmanifest', 'logo.png',
-  'js/config.js', 'js/data.js', 'js/sample.js', 'js/sync.js', 'js/pdf.js', 'js/app.js',
+  'js/config.js', 'js/data.js', 'js/sync.js', 'js/pdf.js', 'js/app.js',
   'vendor/pdf-lib.min.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs',
   'vendor/pdfjs/standard_fonts/LiberationSans-Regular.ttf', 'vendor/pdfjs/standard_fonts/LiberationSans-Bold.ttf',
   'fonts/Poppins-Regular.ttf', 'fonts/Poppins-Medium.ttf', 'fonts/Poppins-Bold.ttf',

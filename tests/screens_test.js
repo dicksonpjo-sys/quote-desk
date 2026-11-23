@@ -19,7 +19,20 @@ const srv = http.createServer((q, r) => {
   const errs = []; pg.on('pageerror', e => errs.push(String(e)));
   pg.on('console', m => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
   let fail = 0; const ok = (name, cond, extra = '') => { console.log((cond ? 'PASS ' : 'FAIL ') + name + (cond ? '' : ' ' + extra)); if (!cond) fail++; };
-  await pg.goto(`http://127.0.0.1:${port}/index.html`); await pg.waitForTimeout(1200);
+  // v1.3.2: a fresh browser sees only the lock screen, and the public code holds no studio data
+  await pg.goto(`http://127.0.0.1:${port}/index.html`); await pg.waitForTimeout(1000);
+  ok('fresh browser: lock screen', await pg.evaluate(() => /Sign in with Google/.test(document.body.innerText) && !document.querySelector('[data-act=open]')));
+  ok('fresh browser: no quotes stored', await pg.evaluate(() => store.projects.length === 0));
+  ok('public code has no bank numbers', await pg.evaluate(() => defaultSettings().banks.every(b => !b.accNo && !b.ifsc)));
+  ok('clicks do nothing while locked', await pg.evaluate(() => { document.body.insertAdjacentHTML('beforeend', '<button id="x" data-act="go" data-r="settings"></button>'); document.getElementById('x').click(); return route.name !== 'settings'; }));
+  // Sign in through a stub Drive that answers every call, as the studio account
+  await pg.route('https://www.googleapis.com/**', r => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ id: 'x', files: [], permissions: [], modifiedTime: '2026-11-23T10:00:00.000Z', user: { emailAddress: 'vishwaafxacc@gmail.com' } }) }));
+  await pg.evaluate(() => { localStorage.setItem('vfxq.token', JSON.stringify({ value: 't', scope: 'https://www.googleapis.com/auth/drive', exp: Date.now() + 3600e3 })); localStorage.setItem('vfxq.connected', 'true'); });
+  await pg.reload(); await pg.waitForTimeout(1500);
+  ok('allowed account: app opens', await pg.evaluate(() => unlocked() && !!document.querySelector('.topbar')));
+  await pg.addScriptTag({ path: path.join(ROOT, 'tests/fixtures/sample.js') });
+  await pg.evaluate(() => { sampleProjects(store); saveLocal(store); render(); });
 
   for (const kind of ['quote', 'supervision']) {
     await pg.evaluate(k => ACT.kind({ dataset: { v: k } }), kind); await pg.waitForTimeout(200);

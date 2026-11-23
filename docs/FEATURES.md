@@ -75,6 +75,11 @@ Numbers follow the Indian financial year (April–March) and restart at 001 ever
 
 ## 7. Google Drive, accounts and backups
 
+- **Sign-in lock:** the app opens only after signing in with an allowed Google account
+  (vishwaafxacc, or an account on its Who has access list). Others see a sign-in screen only.
+  A phone that has been checked works offline for up to 30 days. Removing an account locks it
+  out and clears the quotes from its phone. "Sign out" in Settings locks the app on that device.
+
 - **One studio data file** lives in **vishwaafxacc@gmail.com**'s Drive (moved from vishwaafx@gmail.com
   in v1.3.0). Sign in with vishwaafxacc, or with vishwaafx or dicksonpjo after it is shared with them,
   and you see the same quotes on every phone and computer.
