@@ -203,10 +203,13 @@ const Drive = (() => {
     saveCache(me.email, c);
     return c.backupRoot;
   }
-  async function writeBackup(me, blob, label) {
+  /* `day` = the day the backup is for. Manual backups use today and the real time. The automatic
+     catch-up made the morning after is named for the day it covers, at 2100. */
+  async function writeBackup(me, blob, label, day) {
     const root = await backupRoot(me);
     const now = new Date();
-    const month = todayStr().slice(0, 7);
+    day = day || todayStr();
+    const month = day.slice(0, 7);
     const c = cache(me.email); const key = 'm:' + month;
     if (!c[key]) { const f = await findChild(month, root, true); c[key] = f ? f.id : await createFolder(month, root); saveCache(me.email, c); }
     // Next version number across all months
@@ -216,23 +219,38 @@ const Drive = (() => {
       const files = await list(`'${m.id}' in parents and trashed=false and name contains 'v'`, 'files(name)');
       for (const f of files) { const n = parseInt((f.name.match(/^v(\d+)_/) || [])[1] || '0', 10); if (n > maxV) maxV = n; }
     }
-    const hhmm = String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0');
-    const name = `v${String(maxV + 1).padStart(4, '0')}_${todayStr()}_${hhmm}_${label}.json`;
+    const hhmm = day === todayStr() ? String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0') : '2100';
+    const name = `v${String(maxV + 1).padStart(4, '0')}_${day}_${hhmm}_${label}.json`;
     await uploadNew(name, c[key], blob, 'application/json');
     return name;
   }
+  /* Which day an automatic backup file covers, from its name.
+     `vNNNN_<date>_<HHMM>_auto.json`: at or after 21:00 it is that date's backup; before 21:00 it is a
+     catch-up for the day before (files written before v1.2.1 carried the catch-up's own date). */
+  function autoBackupDay(name) {
+    const m = String(name).match(/^v\d+_(\d{4}-\d{2}-\d{2})_(\d{2})(\d{2})_auto\.json$/);
+    if (!m) return null;
+    return +m[2] >= 21 ? m[1] : addDays(m[1], -1);
+  }
   /* Automatic backup at 9 PM (device time): the first sync after 21:00 makes today's backup;
-     if the app was not opened after 9 PM, the next sync catches up for the day before. */
+     if the app was not opened after 9 PM, the next sync catches up for the day before.
+     The "already done?" check reads the month folders on Drive, so a second device or a cleared
+     browser does not write the same day again. */
   async function dailyBackup(me, blob) {
     if (state.mode !== 'owner') return; // only the studio account makes backups, so it owns them
     const day = new Date().getHours() >= 21 ? todayStr() : addDays(todayStr(), -1);
     const key = 'vfxq.backup9pm.' + me.email;
     if (ls.get(key) === day) return;
     const root = await backupRoot(me);
-    const month = day.slice(0, 7);
-    const mf = await findChild(month, root, true);
-    if (mf && (await list(`'${mf.id}' in parents and trashed=false and name contains '${day}' and name contains '_auto'`, 'files(id)')).length) { ls.set(key, day); return; }
-    await writeBackup(me, blob, 'auto');
+    // Old-style catch-ups for `day` sit under the next date, possibly in the next month's folder.
+    const months = [...new Set([day.slice(0, 7), addDays(day, 1).slice(0, 7)])];
+    for (const month of months) {
+      const mf = await findChild(month, root, true);
+      if (!mf) continue;
+      const files = await list(`'${mf.id}' in parents and trashed=false`, 'files(id,name)');
+      if (files.some(f => autoBackupDay(f.name) === day)) { ls.set(key, day); return; }
+    }
+    await writeBackup(me, blob, 'auto', day);
     ls.set(key, day);
   }
   async function backupNow(store) {

@@ -6,7 +6,7 @@ must not break, and how to test and ship a change.
 - **Owner:** Dickson P Jo (VishwaaFX, Kochi). Talks in short messages; wants to see what you are
   doing as you do it, and to approve anything that changes live data or goes live.
 - **Live app:** https://dicksonpjo-sys.github.io/quote-desk/ (GitHub Pages, `main` branch, root folder)
-- **Current version:** v1.2.0 (`APP_VERSION` in `js/data.js`)
+- **Current version:** v1.2.1 (`APP_VERSION` in `js/data.js`)
 - **User guide:** `docs/FEATURES.md` · **Hosting and Google setup:** `SETUP.md` · **History:** `docs/CHANGELOG.md`
 
 ## What it is
@@ -89,8 +89,14 @@ Line    = { id, desc, type: 'rate'|'lump', sec, rate, amount, date }   // date u
 ```bash
 python3 -m http.server 8080          # then open http://localhost:8080
 node --check js/*.js                 # syntax check before every commit
-python3 tests/drive_sim_test.py      # two-account Drive simulation (needs: pip install playwright; playwright install chromium)
+node tests/logic_test.js             # calculations, numbering, financial year, merge (no installs)
+node tests/screens_test.js           # every screen + every PDF layout at phone size, no errors
+python3 tests/drive_sim_test.py      # two-account Drive simulation + 9 PM backup checks (needs: pip install playwright; playwright install chromium)
 ```
+
+In the Claude Code cloud container: Node Playwright is pre-installed. For the Python test run
+`pip install playwright==<same version as node's>` and prefix the command with
+`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`.
 
 `tests/drive_sim_test.py` fakes Google Drive and checks: private copy → owner file → sharing →
 merge of the stray copy → backups visible to both → "Replace everything" restore → PDF save.
@@ -107,12 +113,23 @@ Run it after any change to `js/sync.js`, `mergeStores` or restore.
 
 ## Known issues / next up
 
-- **Duplicate auto backups (open):** before 9 PM the catch-up backup is for *yesterday* but its file
-  name uses *today's* date, so the "already done?" check misses it and two devices (or a cleared
-  browser) can each write one. Seen on 23 Nov 2026 (v0014 and v0015). Fix: put the backup's own
-  `day` in the file name, or check by date stamp inside the file, and keep the localStorage guard.
+- **Duplicate auto backups:** fixed in v1.2.1. Automatic backup names carry the day they cover;
+  `autoBackupDay()` in `js/sync.js` reads both new names and the old wrongly-dated ones.
 - PDFs saved while signed in as dicksonpjo are stored in the studio folder but owned by that account
   (Google personal accounts cannot transfer ownership automatically).
 - Non-Latin text (Malayalam) prints as `?` in PDFs: the PDF uses Helvetica. Would need an embedded
   Unicode font (pdf-lib + fontkit).
 - Ideas Dickson raised earlier: import shot/second breakdown from the VFX Edit Tool Kit CSV into quote lines.
+
+## Roadmap agreed 23 Nov 2026 (one purpose per version)
+
+- **v1.3.0 — Move studio data to vishwaafxacc@gmail.com.** It becomes the owner (data file, backups,
+  PDFs). Needs: vishwaafxacc added as test user in Google Auth Platform; a full backup first; a
+  one-time, confirmed move; old vishwaafx copy kept read-only as an archive. Plan to be approved first.
+- **v1.4.0 — Studio Console link.** Read-only `quote_desk_index.json` next to the data file (quote no.,
+  kind, project, client, category, created/quote/valid-till dates, status, total, received, due,
+  updated, PDF link; no bank details). Optional Studio project ID on each quote. Studio Console runs
+  on vishwaafxacc@gmail.com and only reads. Write the Studio Console prompt once the format is final.
+- **v1.5.0 — Browse quote revisions:** Versions tab per quote (Original, R1, R2…), view, PDF, compare.
+- **v1.6.0 — Clearer quote screen:** labelled sections (details / bills / totals & discount / payments),
+  column headings on lines, nothing hidden behind the total bar.

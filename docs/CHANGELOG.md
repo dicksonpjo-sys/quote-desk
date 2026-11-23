@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.2.1 — 23 Nov 2026
+- Fixed: duplicate 9 PM automatic backups. A catch-up made the next morning is now named for the day it covers (`v0016_2026-11-22_2100_auto.json`) and filed in that day's month folder. The "already done?" check reads the month folder in Drive, so a second phone or a cleared browser no longer writes the same day again. Old wrongly-named catch-ups (like v0015 on 23 Nov) are recognised.
+- New tests: `tests/logic_test.js` (money format, financial year, numbering, discounts, screen time, payments, merge) and `tests/screens_test.js` (every screen and every PDF layout at phone size). The Drive simulation now checks the 9 PM backup across devices and month change.
+
 ## v1.2.0 — 26 Oct 2026
 - One shared studio data file in vishwaafx@gmail.com; other accounts use it once shared. Old separate copies are merged in automatically.
 - "Share studio data" in Settings (studio account only).

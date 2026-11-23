@@ -3,6 +3,7 @@ Fakes the Drive API in the browser and checks sharing, merge, backups, restore a
 Run from anywhere:  python3 tests/drive_sim_test.py
 Needs: pip install playwright && python3 -m playwright install chromium"""
 import asyncio, json, os, re, subprocess, sys, time, itertools, urllib.parse as up
+from datetime import datetime, timedelta, timezone
 from playwright.async_api import async_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -90,8 +91,9 @@ SETUP = """(tok) => { localStorage.setItem('vfxq.token', JSON.stringify({value: 
 async def main():
     async with async_playwright() as pw:
         b = await pw.chromium.launch()
-        async def device(tok):
-            ctx = await b.new_context(); await ctx.route('https://www.googleapis.com/**', handler)
+        async def device(tok, at=None):
+            ctx = await b.new_context(timezone_id='Asia/Kolkata'); await ctx.route('https://www.googleapis.com/**', handler)
+            if at: await ctx.clock.set_fixed_time(at)
             pg = await ctx.new_page(); errs = []
             pg.on('pageerror', lambda e: errs.append(str(e)))
             await pg.goto('http://127.0.0.1:8767/index.html'); await pg.evaluate(SETUP, tok); await pg.reload(); await pg.wait_for_timeout(1500)
@@ -118,6 +120,42 @@ async def main():
         pdf = [f for f in DRIVE.values() if f['name'] == 'test.pdf'][0]; print('PDF owner:', pdf['owner'])
         print('folders:', sorted(set(f['name'] for f in DRIVE.values() if f['mime'] == FOLDER)))
         print('errors', de, ve)
+
+        # ---- 9 PM automatic backup: one per day, whatever the device (v1.2.1 fix) ----
+        IST = timezone(timedelta(hours=5, minutes=30))
+        at = lambda d, hm: datetime.fromisoformat(f'{d}T{hm}:00').replace(tzinfo=IST)
+        autos = lambda: sorted(f['name'] for f in DRIVE.values() if f['name'].endswith('_auto.json') and not f.get('trashed'))
+        fails = []
+        async def jump(pg, tok, t):  # move a device's clock; its fake 1-hour token is renewed as on a real phone
+            await pg.context.clock.set_fixed_time(t); await pg.evaluate(SETUP, tok)
+        def check(name, got, want):
+            ok = got == want; print(('PASS ' if ok else 'FAIL ') + name + ('' if ok else f'  got {got} want {want}'))
+            if not ok: fails.append(name)
+        DRIVE.clear(); errs = []
+        V1, e = await device('tok_v', at('2026-11-23', '08:30')); errs += e; await sync(V1)
+        check('morning catch-up is named for yesterday', [n[6:] for n in autos()], ['2026-11-22_2100_auto.json'])
+        V2, e = await device('tok_v', at('2026-11-23', '08:45')); errs += e; await sync(V2)
+        check('second device / cleared browser adds nothing', len(autos()), 1)
+        await jump(V1, 'tok_v', at('2026-11-23', '21:10')); await sync(V1)
+        check('9 PM backup for today', [n[6:] for n in autos()][-1:], ['2026-11-23_2110_auto.json'])
+        await jump(V2, 'tok_v', at('2026-11-23', '21:30')); await sync(V2)
+        check('second device after 9 PM adds nothing', len(autos()), 2)
+        # A catch-up written by v1.2.0 carried the next day's date (the bug): it must still count.
+        for f in DRIVE.values():
+            if f['name'].endswith('_auto.json'): f['trashed'] = True
+        month = [f for f in DRIVE.values() if f['name'] == '2026-11'][0]
+        new('v0009_2026-11-24_0905_auto.json', 'application/json', month['id'], 'vishwaafx@gmail.com', '{}')
+        V3, e = await device('tok_v', at('2026-11-24', '10:00')); errs += e; await sync(V3)
+        check('old wrongly-named catch-up is recognised', autos(), ['v0009_2026-11-24_0905_auto.json'])
+        # Month change: catch-up on 1 Dec morning is for 30 Nov and goes in the 2026-11 folder.
+        V4, e = await device('tok_v', at('2026-12-01', '08:00')); errs += e; await sync(V4)
+        last = [f for f in DRIVE.values() if f['name'].endswith('2026-11-30_2100_auto.json')]
+        check('month change: catch-up in the right month folder', [DRIVE[f['parents'][0]]['name'] for f in last], ['2026-11'])
+        V5, e = await device('tok_v', at('2026-12-01', '08:20')); errs += e; await sync(V5)
+        check('month change: second device adds nothing', len(autos()), 2)
+        check('no page errors', errs, [])
+        print('BACKUP TEST', 'FAILED: ' + ', '.join(fails) if fails else 'PASSED')
         await b.close()
+        if fails: sys.exit(1)
 try: asyncio.run(main())
 finally: srv.terminate()
