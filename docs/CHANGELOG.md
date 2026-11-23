@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.3.0 — 23 Nov 2026
+- The studio data account is now **vishwaafxacc@gmail.com**. One-time move in Settings → "Move studio data here": copies the quotes, every backup and every PDF into vishwaafxacc's Drive (copies are owned by it), checks the copy, then renames the old data file `moved_to_vishwaafxacc_…`. Nothing is deleted; the old vishwaafx folders stay as an archive. Until the move, every account keeps using the old file, and quotes typed on other phones during the move are merged in.
+- vishwaafx@gmail.com becomes an extra user once vishwaafxacc shares the studio data with it.
+- A clear message when Google blocks an account that is not on the test-user list.
+- The "Share studio data" box is no longer pre-filled.
+- Drive lists now follow every page (a month folder with more than 50 backups was cut off before).
+
 ## v1.2.2 — 23 Nov 2026
 - Quote numbers are never reused. Deleting VFX/26-27/005 no longer gives 005 to the next new quote, so a number already sent to a client stays unique. Same for SUP numbers.
 

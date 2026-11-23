@@ -12,7 +12,7 @@ time.sleep(1)
 DRIVE = {}   # id -> file
 IDS = itertools.count(1)
 CLOCK = itertools.count(1)
-TOK = {'tok_v': 'vishwaafx@gmail.com', 'tok_d': 'dicksonpjo@gmail.com'}
+TOK = {'tok_v': 'vishwaafx@gmail.com', 'tok_d': 'dicksonpjo@gmail.com', 'tok_a': 'vishwaafxacc@gmail.com'}
 FOLDER = 'application/vnd.google-apps.folder'
 
 def mtime(): return '2026-10-26T10:%02d:%02d.000Z' % divmod(next(CLOCK), 60)
@@ -69,6 +69,11 @@ async def handler(route):
     m = re.fullmatch(r'/upload/drive/v3/files/(\w+)', path)
     if m and req.method == 'PATCH':
         f = DRIVE[m.group(1)]; f['content'] = req.post_data_buffer.decode('utf8'); f['mt'] = mtime(); return await ok({'id': f['id'], 'modifiedTime': f['mt']})
+    m = re.fullmatch(r'/drive/v3/files/(\w+)/copy', path)
+    if m and req.method == 'POST':
+        src = DRIVE.get(m.group(1)); b = json.loads(req.post_data)
+        if not src or not visible(src, me): return await route.fulfill(status=404, body='nf')
+        f = new(b.get('name', src['name']), src['mime'], b['parents'][0], me, src['content']); return await ok({'id': f['id']})
     m = re.fullmatch(r'/drive/v3/files/(\w+)/permissions', path)
     if m:
         f = DRIVE[m.group(1)]
@@ -91,8 +96,10 @@ SETUP = """(tok) => { localStorage.setItem('vfxq.token', JSON.stringify({value: 
 async def main():
     async with async_playwright() as pw:
         b = await pw.chromium.launch()
-        async def device(tok, at=None):
+        async def device(tok, at=None, owner='vishwaafx@gmail.com', prev=()):
             ctx = await b.new_context(timezone_id='Asia/Kolkata'); await ctx.route('https://www.googleapis.com/**', handler)
+            cfg = f"window.VFXQ_CLIENT_ID='test'; window.VFXQ_DATA_OWNER={json.dumps(owner)}; window.VFXQ_PREVIOUS_OWNERS={json.dumps(list(prev))};"
+            await ctx.route('**/js/config.js*', lambda r: r.fulfill(status=200, content_type='text/javascript', body=cfg))
             if at: await ctx.clock.set_fixed_time(at)
             pg = await ctx.new_page(); errs = []
             pg.on('pageerror', lambda e: errs.append(str(e)))
@@ -155,6 +162,50 @@ async def main():
         check('month change: second device adds nothing', len(autos()), 2)
         check('no page errors', errs, [])
         print('BACKUP TEST', 'FAILED: ' + ', '.join(fails) if fails else 'PASSED')
+
+        # ---- v1.3.0: move the studio data from vishwaafx to vishwaafxacc ----
+        DRIVE.clear(); errs = []; nb = len(fails)
+        NEW, OLD = 'vishwaafxacc@gmail.com', ['vishwaafx@gmail.com']
+        data_files = lambda: sorted((f['name'], f['owner']) for f in DRIVE.values() if f['name'].endswith('quotes_data.json'))
+        owned = lambda who, suffix: sorted(f['name'] for f in DRIVE.values() if f['owner'] == who and f['name'].endswith(suffix))
+        V, e = await device('tok_v'); errs += e; await add(V, 'Before move'); await sync(V)
+        await V.evaluate("Drive.backupNow(store)"); await V.evaluate("Drive.savePdf('q1.pdf','VFX-26-27-001 Q1', new Uint8Array([37,80,68,70]))")
+        await V.evaluate("Drive.shareWith('dicksonpjo@gmail.com')"); await V.evaluate("Drive.shareWith('vishwaafxacc@gmail.com')")
+        old_backups = sorted(f['name'] for f in DRIVE.values() if f['name'].startswith('v0'))
+        # 1.3.0 goes live: owner is now vishwaafxacc
+        A, e = await device('tok_a', owner=NEW, prev=OLD); errs += e; st = await sync(A)
+        check('new owner waits in move mode', st['mode'], 'move')
+        check('new owner sees the studio quotes before moving', 'Before move' in await names(A), True)
+        check('move mode writes nothing', (data_files(), owned(NEW, '.json')), ([('vishwaafx_quotes_data.json', 'vishwaafx@gmail.com')], []))
+        D, e = await device('tok_d', owner=NEW, prev=OLD); errs += e; st = await sync(D)
+        check('other accounts keep using the old file until the move', st['mode'], 'shared')
+        await add(D, 'Typed during move'); await sync(D)
+        await A.set_viewport_size({'width': 390, 'height': 844}); await A.evaluate("go({name:'settings', kind:'quote'})"); await A.wait_for_timeout(300)
+        check('settings shows the Move button', await A.evaluate("!!document.querySelector('[data-act=movedata]')"), True)
+        if os.environ.get('SHOTS'): await A.screenshot(path=os.path.join(os.environ['SHOTS'], 'move_1_settings.png'))
+        await A.evaluate("ACT.movedata()"); await A.evaluate("ACT.confirmok()"); await A.wait_for_timeout(2500)
+        sheet = await A.evaluate("document.getElementById('sheet')?.innerText || ''"); print('move report:', ' '.join(sheet.split()))
+        if os.environ.get('SHOTS'): await A.screenshot(path=os.path.join(os.environ['SHOTS'], 'move_2_report.png'))
+        check('move: nothing failed, old file retired', sheet.startswith('Move complete') and 'could not' not in sheet, True)
+        check('move: data file now owned by vishwaafxacc', [o for n, o in data_files() if n == 'vishwaafx_quotes_data.json'], [NEW])
+        check('move: old file renamed', any(n.startswith('moved_to_vishwaafxacc_') for n, o in data_files()), True)
+        check('move: every backup copied, same names', sorted(n for n in owned(NEW, '.json') if n.startswith('v0')), old_backups)
+        check('move: PDF copied', owned(NEW, '.pdf'), ['q1.pdf'])
+        check('move: quote typed on another phone during the move is kept', 'Typed during move' in await names(A), True)
+        st = await sync(A); check('after move: owner mode', st['mode'], 'owner')
+        rep2 = await A.evaluate("Drive.moveHere(store).then(r => r.report).catch(e => e.message)")
+        check('move cannot run twice', 'nothing' in str(rep2) or 'no studio data' in str(rep2), True)
+        await A.evaluate("Drive.shareWith('dicksonpjo@gmail.com')"); await A.evaluate("Drive.shareWith('vishwaafx@gmail.com')")
+        st = await sync(D); check('dicksonpjo now uses the new file', (st['mode'], 'Typed during move' in await names(D)), ('shared', True))
+        await add(D, 'After move'); await sync(D); await sync(A)
+        check('edits flow to the new owner', 'After move' in await names(A), True)
+        V2, e = await device('tok_v', owner=NEW, prev=OLD); errs += e; st = await sync(V2)
+        check('vishwaafx becomes an extra user', (st['mode'], sorted(await names(V2)) == sorted(await names(A))), ('shared', True))
+        check('only the new owner can back up', 'made by vishwaafxacc' in await V2.evaluate("Drive.backupNow(store).then(()=>'ok').catch(e=>e.message)"), True)
+        nm = await A.evaluate("Drive.backupNow(store)"); check('new owner backup continues numbering', nm[:5], 'v%04d' % (len(old_backups) + 1))
+        check('vishwaafx sees backups', len(await V2.evaluate("Drive.listBackups().then(l=>l.map(f=>f.name))")) >= len(old_backups) + 1, True)
+        check('move: no page errors', errs, [])
+        print('MOVE TEST', 'FAILED' if len(fails) > nb else 'PASSED')
         await b.close()
         if fails: sys.exit(1)
 try: asyncio.run(main())

@@ -1,4 +1,4 @@
-# VishwaaFX Quote Desk — what it does (v1.2.2)
+# VishwaaFX Quote Desk — what it does (v1.3.0)
 
 Live app: https://dicksonpjo-sys.github.io/quote-desk/
 
@@ -75,15 +75,16 @@ Numbers follow the Indian financial year (April–March) and restart at 001 ever
 
 ## 7. Google Drive, accounts and backups
 
-- **One studio data file** lives in **vishwaafx@gmail.com**'s Drive. Sign in with vishwaafx or with
-  dicksonpjo (after it is shared) and you see the same quotes on every phone and computer.
+- **One studio data file** lives in **vishwaafxacc@gmail.com**'s Drive (moved from vishwaafx@gmail.com
+  in v1.3.0). Sign in with vishwaafxacc, or with vishwaafx or dicksonpjo after it is shared with them,
+  and you see the same quotes on every phone and computer.
 - **Share studio data** (Settings, as vishwaafx) gives another Google account edit access to the
   data folder and the backups folder.
 - **Offline:** everything is saved on the device and syncs when the connection is back.
 - **Backups:** saved in `VishwaaFX Quotes Backups/<month>/` as numbered versions:
   - an **automatic** one every day at 9 PM (or on the next open if the app was closed),
   - **"Back up to Drive now"** whenever you want one.
-  Only the studio account makes backups, so vishwaafx owns them all.
+  Only the studio account makes backups, so vishwaafxacc owns them all.
 - **Restore** from a Drive backup or from a downloaded file:
   - **Replace everything:** every device switches to exactly that backup.
   - **Only add missing quotes.**

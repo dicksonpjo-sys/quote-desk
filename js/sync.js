@@ -20,6 +20,8 @@ const Drive = (() => {
   };
 
   const owner = () => String(window.VFXQ_DATA_OWNER || '').trim().toLowerCase();
+  /* Accounts that owned the studio data before. Their file is read until the owner taps "Move". */
+  const previousOwners = () => (window.VFXQ_PREVIOUS_OWNERS || []).map(e => String(e).trim().toLowerCase()).filter(e => e && e !== owner());
   const redirectUri = () => location.origin + location.pathname;
   const clientId = () => (ls.get(K.client) || window.VFXQ_CLIENT_ID || '').trim();
   const tokenRec = () => ls.get(K.token);
@@ -28,7 +30,7 @@ const Drive = (() => {
   /* Tokens from the first version only had access to the app's own files. */
   const needsUpgrade = () => { const t = tokenRec(); return isConnected() && !!t && !String(t.scope || '').split(' ').includes(SCOPE); };
   const user = () => ls.get(K.who);
-  const state = { mode: 'unknown', ownerEmail: owner() }; // 'owner' | 'shared' | 'private'
+  const state = { mode: 'unknown', ownerEmail: owner(), moveSource: null }; // 'owner' | 'move' | 'shared' | 'private'
 
   function setClientId(id) { ls.set(K.client, (id || '').trim()); }
 
@@ -53,6 +55,7 @@ const Drive = (() => {
     const ret = ls.get(K.ret) || '#/';
     history.replaceState(null, '', location.pathname + location.search + ret);
     if (q.get('error')) {
+      if (q.get('error') === 'access_denied') return 'Google did not allow this account. A new account must first be added as a test user in Google Cloud (Google Auth Platform → Audience → Test users).';
       return q.get('error') === 'interaction_required' || q.get('error') === 'login_required' || q.get('error') === 'consent_required'
         ? 'reconnect' : 'Google sign-in was cancelled (' + q.get('error') + ').';
     }
@@ -101,9 +104,13 @@ const Drive = (() => {
   function cache(email) { const all = ls.get(K.ids) || {}; return all[email] || {}; }
   function saveCache(email, c) { const all = ls.get(K.ids) || {}; all[email] = c; ls.set(K.ids, all); }
 
-  async function list(query, fields = 'files(id,name,modifiedTime,createdTime,ownedByMe,owners(emailAddress),parents)') {
-    const r = await json(`${API}/files?q=${encodeURIComponent(query)}&fields=${encodeURIComponent(fields)}&orderBy=createdTime&pageSize=50&supportsAllDrives=true&includeItemsFromAllDrives=true`);
-    return r.files || [];
+  async function list(query, fields = 'files(id,name,modifiedTime,createdTime,ownedByMe,owners(emailAddress),parents,mimeType)') {
+    let out = [], page = '';
+    do { // follow every page: a month of backups or a PDF folder can hold more than one page
+      const r = await json(`${API}/files?q=${encodeURIComponent(query)}&fields=${encodeURIComponent('nextPageToken,' + fields)}&orderBy=createdTime&pageSize=200&supportsAllDrives=true&includeItemsFromAllDrives=true${page ? '&pageToken=' + encodeURIComponent(page) : ''}`);
+      out = out.concat(r.files || []); page = r.nextPageToken || '';
+    } while (page);
+    return out;
   }
   async function findChild(name, parent, folder = false) {
     let query = `name='${esc(name)}' and trashed=false and '${parent}' in parents`;
@@ -134,9 +141,14 @@ const Drive = (() => {
     const files = await list(`name='${DATA_FILE}' and trashed=false`);
     let primary = null;
     if (owner()) primary = files.find(f => ownerOf(f) === owner()) || null;
-    if (!primary) primary = files.find(f => f.ownedByMe) || files[0] || null;
     const iAmOwner = !owner() || me.email === owner();
-    state.mode = iAmOwner ? 'owner' : (primary && ownerOf(primary) === owner() ? 'shared' : 'private');
+    // The studio file still sitting with a previous owner (not moved yet).
+    const source = files.find(f => previousOwners().includes(ownerOf(f))) || null;
+    let moving = false;
+    if (!primary && source) { primary = source; moving = iAmOwner; } // until the move, everyone keeps using the old file
+    if (!primary) primary = files.find(f => f.ownedByMe) || files[0] || null;
+    state.moveSource = iAmOwner ? source : null;
+    state.mode = moving ? 'move' : iAmOwner ? 'owner' : (primary && (ownerOf(primary) === owner() || primary === source) ? 'shared' : 'private');
     if (c.mode !== state.mode) { // switched between a private copy and the shared studio data: forget old folder ids
       for (const k of Object.keys(c)) if (k === 'backupRoot' || k.startsWith('m:') || k.startsWith('f:')) delete c[k];
       c.mode = state.mode;
@@ -151,18 +163,25 @@ const Drive = (() => {
     saveCache(me.email, c);
     // Other copies this account can edit (e.g. the second account's old private file).
     const strays = primary ? files.filter(f => f.id !== primary.id && f.ownedByMe) : [];
-    return { c, primary, strays };
+    return { c, primary, strays, source };
   }
 
   /* Pull remote, merge, push merged. Returns merged store. */
   async function sync(store) {
     const me = await whoAmI();
-    const { c, primary, strays } = await locate(me);
+    const { c, primary, strays, source } = await locate(me);
     let merged = store;
     const sameAccount = store.meta.syncAccount === me.email && store.meta.syncFile === c.data;
     if (primary && (!sameAccount || primary.modifiedTime !== store.meta.remoteModified)) {
       const remote = await json(`${API}/files/${primary.id}?alt=media&supportsAllDrives=true`);
       merged = mergeStores(store, remote);
+    }
+    if (state.mode === 'move') { // new owner before "Move": read the old studio file, write nothing
+      merged.meta = { ...(store.meta || {}), lastSync: nowISO(), syncAccount: me.email, syncMode: 'move', syncFile: null, remoteModified: null };
+      return merged;
+    }
+    if (source && source.id !== primary?.id) { // move started but not finished: keep reading the old file
+      try { merged = mergeStores(merged, await json(`${API}/files/${source.id}?alt=media&supportsAllDrives=true`)); } catch (e) { console.warn('old studio file', e); }
     }
     for (const f of strays) { // fold an old separate copy in, then retire it
       try {
@@ -190,6 +209,72 @@ const Drive = (() => {
     }
     return parent;
   }
+  /* ---------- One-time move of the studio data to a new owner account ----------
+     Run by the new owner (VFXQ_DATA_OWNER) while the old owner's folders are shared with it.
+     Copies are owned by whoever makes them, so this account ends up owning the data file, every
+     backup and every PDF. Nothing is deleted: the old folders stay as an archive and the old data
+     file is renamed so no device keeps writing to it. Safe to run again: files already copied are skipped. */
+  async function copyTree(src, dst, rep, skip = () => false) {
+    const items = await list(`'${src}' in parents and trashed=false`, 'files(id,name,mimeType)');
+    const have = new Set((await list(`'${dst}' in parents and trashed=false`, 'files(id,name,mimeType)')).map(f => f.mimeType + '|' + f.name));
+    for (const it of items) {
+      if (it.mimeType === FOLDER_MIME) {
+        const d = (await findChild(it.name, dst, true))?.id || await createFolder(it.name, dst);
+        await copyTree(it.id, d, rep, skip);
+      } else if (!skip(it.name)) {
+        rep.files++;
+        if (have.has(it.mimeType + '|' + it.name)) { rep.already++; continue; }
+        try {
+          await json(`${API}/files/${it.id}/copy?fields=id&supportsAllDrives=true`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: it.name, parents: [dst] }) });
+          rep.copied++;
+        } catch (e) { rep.failed.push(it.name); }
+      }
+    }
+  }
+  async function myFolder(name) {
+    const f = (await list(`name='${esc(name)}' and mimeType='${FOLDER_MIME}' and trashed=false and 'root' in parents`)).find(x => x.ownedByMe);
+    return f ? f.id : createFolder(name);
+  }
+  async function moveHere(store, progress = () => {}) {
+    const me = await whoAmI();
+    if (!owner() || me.email !== owner()) throw new Error(`only ${owner()} can take over the studio data`);
+    const { c, source } = await locate(me);
+    if (!source) throw new Error('there is no studio data waiting to be moved');
+    const rep = { from: ownerOf(source), quotes: 0, files: 0, copied: 0, already: 0, failed: [], renamed: false };
+    progress('Reading the studio data…');
+    let merged = mergeStores(store, await json(`${API}/files/${source.id}?alt=media&supportsAllDrives=true`));
+    // 1. The data file, in this account's own "VishwaaFX Quotes" folder
+    progress('Saving the quotes in this account…');
+    const root = await myFolder(FOLDER);
+    const mine = (await list(`name='${DATA_FILE}' and trashed=false and '${root}' in parents`)).find(f => f.ownedByMe);
+    if (mine) merged = mergeStores(merged, await json(`${API}/files/${mine.id}?alt=media`));
+    const body = () => new Blob([JSON.stringify({ ...merged, meta: undefined, savedAt: nowISO(), savedBy: me.email, app: APP_VERSION })], { type: 'application/json' });
+    const res = mine ? await overwrite(mine.id, body(), 'application/json') : await uploadNew(DATA_FILE, root, body(), 'application/json');
+    const check = await json(`${API}/files/${res.id}?alt=media`);
+    rep.quotes = (check.projects || []).filter(p => !p.deleted).length;
+    if ((check.projects || []).length !== merged.projects.length) throw new Error('the copied data file does not match. Nothing was renamed; try again');
+    // 2. PDFs and anything else in the old studio folder (old data files are not copied)
+    progress('Copying PDFs…');
+    const oldRoot = source.parents?.[0];
+    if (oldRoot) await copyTree(oldRoot, root, rep, n => n === DATA_FILE || /^(merged_|moved_to_)/.test(n));
+    // 3. Backups, month by month, keeping their names and numbers
+    progress('Copying backups…');
+    const oldBk = (await list(`name='${BACKUP_FOLDER}' and mimeType='${FOLDER_MIME}' and trashed=false`)).find(f => ownerOf(f) === rep.from);
+    const bkRoot = await myFolder(BACKUP_FOLDER);
+    if (oldBk) await copyTree(oldBk.id, bkRoot, rep);
+    // 4. Retire the old data file only when everything is across
+    if (!rep.failed.length) {
+      await json(`${API}/files/${source.id}?fields=id&supportsAllDrives=true`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: `moved_to_${me.email.split('@')[0]}_${todayStr()}_${DATA_FILE}` }) });
+      rep.renamed = true;
+    }
+    for (const k of Object.keys(c)) if (k.startsWith('m:') || k.startsWith('f:')) delete c[k];
+    Object.assign(c, { root, data: res.id, backupRoot: bkRoot, mode: 'owner' }); saveCache(me.email, c);
+    state.mode = 'owner'; state.moveSource = rep.renamed ? null : source;
+    merged.meta = { ...(store.meta || {}), remoteModified: res.modifiedTime, lastSync: nowISO(), syncAccount: me.email, syncFile: res.id, syncMode: 'owner' };
+    return { store: merged, report: rep };
+  }
+
   /* Backups live in their own folder, "VishwaaFX Quotes Backups", next to the studio folder.
      Each backup is a new numbered version inside a month folder:
        VishwaaFX Quotes Backups / 2026-10 / v0007_2026-10-26_2100_auto.json */
@@ -198,7 +283,8 @@ const Drive = (() => {
     const c = cache(me.email);
     if (c.backupRoot) return c.backupRoot;
     const found = await list(`name='${BACKUP_FOLDER}' and mimeType='${FOLDER_MIME}' and trashed=false`);
-    let f = found.find(x => owner() && ownerOf(x) === owner()) || found.find(x => x.ownedByMe) || null;
+    let f = found.find(x => owner() && ownerOf(x) === owner()) || found.find(x => previousOwners().includes(ownerOf(x))) || found.find(x => x.ownedByMe) || null;
+    if (!f && state.mode !== 'owner') return null; // only the studio account creates the backups folder
     c.backupRoot = f ? f.id : await createFolder(BACKUP_FOLDER);
     saveCache(me.email, c);
     return c.backupRoot;
@@ -261,6 +347,7 @@ const Drive = (() => {
   }
   async function listBackups() {
     const me = await whoAmI(); const root = await backupRoot(me);
+    if (!root) return [];
     const months = await list(`'${root}' in parents and trashed=false and mimeType='${FOLDER_MIME}'`, 'files(id,name)');
     let out = [];
     for (const m of months) out.push(...await list(`'${m.id}' in parents and trashed=false`, 'files(id,name,modifiedTime)'));
@@ -295,6 +382,6 @@ const Drive = (() => {
     return (r.permissions || []).filter(p => p.role !== 'owner').map(p => p.emailAddress);
   }
 
-  return { authorize, handleRedirect, maybeSilentRefresh, disconnect, sync, savePdf, listBackups, backupNow, BACKUP_FOLDER, readFile, shareWith, sharedWith,
+  return { authorize, handleRedirect, maybeSilentRefresh, disconnect, sync, moveHere, previousOwners, savePdf, listBackups, backupNow, BACKUP_FOLDER, readFile, shareWith, sharedWith,
     isConnected, needsUpgrade, token, user, owner, state, clientId, setClientId, redirectUri, FOLDER };
 })();

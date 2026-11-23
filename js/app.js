@@ -511,14 +511,17 @@ function driveCard() {
   const mode = store.meta.syncMode;
   const last = store.meta.lastSync ? new Date(store.meta.lastSync).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '';
   let box;
+  const moveBtn = label => `<button class="btn primary" data-act="movedata" style="justify-self:start">${label}</button>`;
   if (Drive.needsUpgrade()) box = `<div class="warnbox">Tap <b>Reconnect</b> once so this account can use the shared studio data.</div>`;
+  else if (mode === 'move') box = `<div class="warnbox stack"><div><b>${esc(who)}</b> is the new studio data account. The quotes are still in the old account's Drive. Tap <b>Move studio data here</b> to copy the quotes, every backup and every PDF into this account. Nothing is deleted; the old folder stays as an archive.</div>${moveBtn('Move studio data here')}</div>`;
+  else if (mode === 'owner' && Drive.state.moveSource) box = `<div class="warnbox stack"><div>Some files from the old account were not copied yet. Tap to finish the move; files already copied are skipped.</div>${moveBtn('Finish the move')}</div>`;
   else if (mode === 'owner') box = `<div class="okbox">Studio data account: <b>${esc(who)}</b>. Quotes, PDFs and the 9 PM daily backup are in “${Drive.FOLDER}” in this Drive.${last ? ' Last sync ' + last + '.' : ''}</div>`;
   else if (mode === 'shared') box = `<div class="okbox">Signed in as <b>${esc(who)}</b>, using the shared studio data from <b>${esc(ownerEmail)}</b>.${last ? ' Last sync ' + last + '.' : ''}</div>`;
   else if (mode === 'private') box = `<div class="warnbox">Signed in as <b>${esc(who)}</b>, but the studio folder from <b>${esc(ownerEmail)}</b> is not shared with this account yet, so this is a separate copy. Open the app with ${esc(ownerEmail)} and use “Share studio data” below, then tap Sync now here.</div>`;
   else box = `<div class="okbox">Connected${who ? ' as <b>' + esc(who) + '</b>' : ''}.${last ? ' Last sync ' + last + '.' : ''}</div>`;
   const share = mode === 'owner' ? `<div class="blk"><b>Share studio data</b>
       <div class="muted" style="font-size:12.5px">Give another Google account the same quotes. They get edit access to the “${Drive.FOLDER}” folder.</div>
-      <div class="row"><input type="email" id="sharemail" class="grow" placeholder="name@gmail.com" value="dicksonpjo@gmail.com" aria-label="Email to share with"><button class="btn" data-act="share">Share</button></div>
+      <div class="row"><input type="email" id="sharemail" class="grow" placeholder="name@gmail.com" aria-label="Email to share with"><button class="btn" data-act="share">Share</button></div>
       <div class="muted" style="font-size:12px" id="sharedlist"></div></div>` : '';
   return `${box}
     <div class="row"><button class="btn primary" data-act="syncnow">Sync now</button><button class="btn" data-act="reauth">${Drive.needsUpgrade() ? 'Reconnect (needed)' : 'Switch account / Reconnect'}</button><button class="btn danger" data-act="disconnect">Disconnect</button></div>
@@ -937,6 +940,23 @@ ACT.share = async () => {
   try { await Drive.shareWith(email); toast(`Shared with ${email}. Open the app there and tap Sync now.`, 4000); showShared(); }
   catch (e) { toast('Sharing failed: ' + e.message, 4000); }
 };
+ACT.movedata = () => confirmBox('Move studio data to this account?',
+  'Make sure the old account has done “Back up to Drive now” and has shared its studio data with this account. The quotes, backups and PDFs are copied here; the old folder is kept as an archive.',
+  'Move now', async () => {
+    if (syncing) return toast('A sync is running. Try again in a moment.');
+    syncing = true; setSync('busy');
+    try {
+      const { store: merged, report: r } = await Drive.moveHere(store, m => toast(m, 8000));
+      store = merged; saveLocal(store); setSync('ok'); render();
+      openSheet(`<h2>${r.renamed ? 'Move complete' : 'Move almost complete'}</h2><div class="stack">
+        <div class="${r.renamed ? 'okbox' : 'warnbox'}">${r.quotes} quotes are now in this account.<br>${r.copied} files copied${r.already ? `, ${r.already} already here` : ''} (backups and PDFs) from ${esc(r.from)}.
+        ${r.failed.length ? `<br><b>${r.failed.length} could not be copied:</b> ${esc(r.failed.slice(0, 5).join(', '))}${r.failed.length > 5 ? '…' : ''}. Tap “Finish the move” in Settings to try again.` : ''}</div>
+        <div class="muted" style="font-size:13px">Next: “Share studio data” below with the other accounts, then tap Sync now on the other phones.</div>
+        <button class="btn primary" data-act="closesheet">Done</button></div>`);
+    } catch (e) { setSync('err'); toast('Move failed: ' + e.message, 6000); }
+    finally { syncing = false; }
+    scheduleSync(500);
+  }, false);
 async function showShared() {
   const el = document.getElementById('sharedlist'); if (!el) return;
   try { const l = await Drive.sharedWith(); el.textContent = l.length ? 'Shared with: ' + l.join(', ') : 'Not shared with anyone yet.'; } catch { el.textContent = ''; }

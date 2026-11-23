@@ -6,7 +6,7 @@ must not break, and how to test and ship a change.
 - **Owner:** Dickson P Jo (VishwaaFX, Kochi). Talks in short messages; wants to see what you are
   doing as you do it, and to approve anything that changes live data or goes live.
 - **Live app:** https://dicksonpjo-sys.github.io/quote-desk/ (GitHub Pages, `main` branch, root folder)
-- **Current version:** v1.2.2 (`APP_VERSION` in `js/data.js`)
+- **Current version:** v1.3.0 (`APP_VERSION` in `js/data.js`)
 - **User guide:** `docs/FEATURES.md` · **Hosting and Google setup:** `SETUP.md` · **History:** `docs/CHANGELOG.md`
 
 ## What it is
@@ -24,7 +24,7 @@ Two kinds of documents, chosen on the start screen:
 | File | What it does |
 |---|---|
 | `index.html` | Shell. Loads every script with `?v=<version>`; bump these on each release. |
-| `js/config.js` | Google OAuth Client ID and `VFXQ_DATA_OWNER` (studio account `vishwaafx@gmail.com`). |
+| `js/config.js` | Google OAuth Client ID, `VFXQ_DATA_OWNER` (studio account `vishwaafxacc@gmail.com`) and `VFXQ_PREVIOUS_OWNERS` (`vishwaafx@gmail.com`). |
 | `js/data.js` | `APP_VERSION`, data model, default settings (company, banks, note blocks, templates), number formats, calculations, quote numbering, `mergeStores`. |
 | `js/sample.js` | Starter quotes rebuilt from real PDFs (Law and Order, Moshi Moshi, 40 Days, Mayan). Fixed ids `sample_*`. |
 | `js/sync.js` | Google sign-in (OAuth token redirect flow) and every Drive call: shared studio file, merge, PDFs, versioned backups, sharing. |
@@ -59,20 +59,27 @@ Line    = { id, desc, type: 'rate'|'lump', sec, rate, amount, date }   // date u
 
 ## Sync rules (do not break)
 
-- **One studio file:** `vishwaafx_quotes_data.json` in `My Drive/VishwaaFX Quotes/` of **vishwaafx@gmail.com**.
-  Any other account (dicksonpjo@gmail.com) uses the same file once the folder is shared with it
+- **One studio file:** `vishwaafx_quotes_data.json` in `My Drive/VishwaaFX Quotes/` of **vishwaafxacc@gmail.com**
+  (since v1.3.0; before that vishwaafx@gmail.com, whose folders remain as an archive).
+  Any other account (vishwaafx, dicksonpjo) uses the same file once the folder is shared with it
   (Settings → Share studio data). A separate copy found in another account is merged in once and
   renamed `merged_<date>_…`.
 - **Merge, never overwrite blindly:** `mergeStores` keeps the newest `updatedAt` per project and per
   settings. Every edit must call `touchP(p)` or `touchS()` so its timestamp moves. Deletes are soft
   (`deleted: true`) so they sync.
+- **Owner move (v1.3.0):** while the owner in `VFXQ_DATA_OWNER` has no data file but a
+  `VFXQ_PREVIOUS_OWNERS` account does, the owner is in `move` mode (reads the old file, writes nothing,
+  no backups) and everyone else keeps using the old file. `Drive.moveHere()` copies the data file, the
+  studio folder (PDFs) and the backups folder, verifies, then renames the old file `moved_to_<user>_…`.
+  It can be re-run: files already copied are skipped.
 - **Restore = re-stamp:** "Replace everything" stamps restored records with now and soft-deletes the
   rest; otherwise the newer Drive copy would win the next merge (the bug fixed in v1.2).
 - **Backups:** only the studio account writes them, into `My Drive/VishwaaFX Quotes Backups/<YYYY-MM>/`
   as `v0001_<date>_<HHMM>_<auto|manual>.json`. Automatic one: first sync after 9 PM, or a catch-up
   on the next open.
 - **Scope:** `https://www.googleapis.com/auth/drive`. The Google Cloud project is in **Testing** mode;
-  only listed test users can sign in (vishwaafx@gmail.com, dicksonpjo@gmail.com).
+  only listed test users can sign in (vishwaafx@gmail.com, dicksonpjo@gmail.com, vishwaafxacc@gmail.com once added).
+  A blocked account comes back with `error=access_denied`; the app explains it.
 - Token lasts one hour; the app refreshes it with a silent redirect. No secrets live in the repo:
   the OAuth Client ID is public by design.
 
@@ -99,7 +106,9 @@ In the Claude Code cloud container: Node Playwright is pre-installed. For the Py
 `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`.
 
 `tests/drive_sim_test.py` fakes Google Drive and checks: private copy → owner file → sharing →
-merge of the stray copy → backups visible to both → "Replace everything" restore → PDF save.
+merge of the stray copy → backups visible to both → "Replace everything" restore → PDF save →
+9 PM backups across devices → owner move from vishwaafx to vishwaafxacc (three accounts).
+Set `SHOTS=<folder>` to save screenshots of the move screens.
 Run it after any change to `js/sync.js`, `mergeStores` or restore.
 
 ## Release checklist
@@ -123,9 +132,11 @@ Run it after any change to `js/sync.js`, `mergeStores` or restore.
 
 ## Roadmap agreed 23 Nov 2026 (one purpose per version)
 
-- **v1.3.0 — Move studio data to vishwaafxacc@gmail.com.** It becomes the owner (data file, backups,
-  PDFs). Needs: vishwaafxacc added as test user in Google Auth Platform; a full backup first; a
-  one-time, confirmed move; old vishwaafx copy kept read-only as an archive. Plan to be approved first.
+- **v1.3.0 — Move studio data to vishwaafxacc@gmail.com.** Built and tested. Go-live order: Dickson adds
+  vishwaafxacc as test user → as vishwaafx: Back up now + Download backup + Share studio data with
+  vishwaafxacc → push 1.3.0 → as vishwaafxacc: Move studio data here → share with dicksonpjo and vishwaafx.
+  Rollback: set `VFXQ_DATA_OWNER` back to vishwaafx, empty `VFXQ_PREVIOUS_OWNERS`, rename the
+  `moved_to_…` file back to `vishwaafx_quotes_data.json`.
 - **v1.4.0 — Studio Console link.** Read-only `quote_desk_index.json` next to the data file (quote no.,
   kind, project, client, category, created/quote/valid-till dates, status, total, received, due,
   updated, PDF link; no bank details). Optional Studio project ID on each quote. Studio Console runs
