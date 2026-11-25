@@ -1,10 +1,10 @@
 /* Offline cache for the app shell. Drive API calls are never cached. */
-const CACHE = 'quote-desk-v1.5.0';
+const CACHE = 'quote-desk-v1.6.0';
 const SHELL = ['./', 'index.html', 'css/app.css', 'manifest.webmanifest', 'logo.png',
   'js/config.js', 'js/data.js', 'js/sync.js', 'js/pdf.js', 'js/app.js',
   'vendor/pdf-lib.min.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs',
   'vendor/pdfjs/standard_fonts/LiberationSans-Regular.ttf', 'vendor/pdfjs/standard_fonts/LiberationSans-Bold.ttf',
-  'fonts/Poppins-Regular.ttf', 'fonts/Poppins-Medium.ttf', 'fonts/Poppins-Bold.ttf',
+  'fonts/Manrope-400.woff2', 'fonts/Manrope-500.woff2', 'fonts/Manrope-600.woff2', 'fonts/Manrope-700.woff2', 'fonts/JetBrainsMono-400.woff2', 'fonts/JetBrainsMono-500.woff2',
   'logo_mono.png', 'icons/mark.png', 'icons/favicon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())));

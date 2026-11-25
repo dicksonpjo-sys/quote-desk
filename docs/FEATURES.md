@@ -1,4 +1,4 @@
-# VishwaaFX Quote Desk — what it does (v1.5.0)
+# VishwaaFX Quote Desk — what it does (v1.6.0)
 
 Live app: https://dicksonpjo-sys.github.io/quote-desk/
 
@@ -19,6 +19,9 @@ Numbers follow the Indian financial year (April–March) and restart at 001 ever
   card listing every quote, with a combined total, received and due. Group from a quote's ⋯ menu →
   "Group with another quote"; undo with "Remove from project". Each quote keeps its own number, PDF
   and payments.
+- **Project page:** tap the project card. Every quote with its bills collapsed; tap a bill or
+  "Expand all" for the breakdown. **Project PDF** makes one "Project statement" with every quote,
+  bill and a grand total, then every breakdown.
 - **Sort:** latest updated (default), quote no., quote date, amount, client or status.
 
 - **Summary band:** money to collect, amount quoted and waiting for approval, amount received, and

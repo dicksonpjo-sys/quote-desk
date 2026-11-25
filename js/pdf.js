@@ -381,11 +381,63 @@ const QuotePDF = (() => {
     return pdf.save();
   }
 
+  /* ---------- project statement (v1.6.0): every quote of a project group in one PDF ----------
+     Page 1: each quote (number · title · status · total) with its bills under it, one grand total,
+     the lead quote's notes and signature. Then the breakdown of every bill, grouped by quote. */
+  const billsOf = q => q.mode === 'tiers' ? q.sections.filter(x => !q.selectedTier || x.id === q.selectedTier) : q.sections;
+  async function buildProject(store, quotes, name, opts = {}) {
+    pdf = await PDFLib.PDFDocument.create();
+    F = await pdf.embedFont(PDFLib.StandardFonts.Helvetica);
+    FB = await pdf.embedFont(PDFLib.StandardFonts.HelveticaBold);
+    okChar.clear();
+    const s = store.settings, lead = quotes[0];
+    const nos = quotes.map(q => quoteNo(store, q));
+    ctx = { store, s, p: { ...lead, name }, pages: [], y: 0, no: `Project statement · ${name}` };
+    await loadImages(s);
+    pdf.setTitle(`Project statement ${name}`); pdf.setAuthor(s.company.name); pdf.setCreator('VishwaaFX Quote Desk');
+    const meta = [['Date', fmtDate(todayStr())], ...nos.map((n, i) => [i ? '' : (nos.length > 1 ? 'Quote nos.' : 'Quote no.'), n])];
+    const main = { title: 'PROJECT STATEMENT', sub: `${quotes.length} ${quotes.length === 1 ? 'QUOTE' : 'QUOTES'}`, meta };
+    const o = lead.pdf || {};
+    const gst = o.showGst !== false ? (o.gstText || 'GST if applicable @ 18%, not included') : '';
+    const byPlace = pl => (lead.blocks || []).filter(b => b.placement === pl);
+    newPage(main);
+    const rows = [];
+    quotes.forEach(q => {
+      rows.push({ strong: true, cells: [{ t: '' }, { t: `${quoteNo(store, q)}   ${q.name}` }, { t: q.status, color: MID }, { t: money(projectValue(q)) }] });
+      billsOf(q).forEach((sec, j) => rows.push({ cells: [{ t: String(j + 1), color: SOFT }, { t: secTitle(q, q.sections.indexOf(sec)) }, { pay: sec.pay?.status || 'Pending' }, { t: money(secNet(sec)) }] }));
+    });
+    table([{ w: 26, head: '#', align: 'center' }, { w: null, head: 'Quote / bill' }, { w: 86, head: 'Payment' }, { w: 110, head: 'Amount', align: 'right' }], rows, main);
+    const total = quotes.reduce((a, q) => a + projectValue(q), 0), rec = quotes.reduce((a, q) => a + projectReceived(q), 0);
+    totals(rec ? [['Received', money(rec)], ['Balance due', money(total - rec), true]] : [], total, main, gst);
+    blocks(byPlace('quote'), main);
+    signature(main);
+    const nb = quotes.reduce((a, q) => a + billsOf(q).length, 0);
+    const bk = { title: 'COST BREAKDOWN', sub: `${nb} ${nb === 1 ? 'BILL' : 'BILLS'}`, meta };
+    newPage(bk);
+    quotes.forEach(q => {
+      ensure(120, bk); ctx.y -= 4;
+      txt(cur(), `${quoteNo(store, q)}   ${q.name}`, ML, ctx.y, { size: 10.5, bold: true });
+      hline(cur(), ctx.y - 6, ML, W - MR, 0.9, INK); ctx.y -= 24;
+      billsOf(q).forEach(sec => billBreakdown(q, sec, q.sections.indexOf(sec), bk));
+    });
+    blocks(byPlace('breakdown'), bk);
+    blocks(byPlace('end'), bk);
+    if (Array.isArray(opts.pages) && opts.pages.length) {
+      const keep = new Set(opts.pages);
+      for (let i = ctx.pages.length - 1; i >= 0; i--) if (!keep.has(i)) { pdf.removePage(i); ctx.pages.splice(i, 1); }
+    }
+    footer();
+    return pdf.save();
+  }
+  const safe = t => String(t).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const projectFileName = name => safe(`Project statement ${name} ${fmtDate(todayStr())}`) + '.pdf';
+  const projectFolderName = name => safe(`Project ${name}`);
+
   function fileName(store, p) {
     return `${quoteNo(store, p).replace(/\//g, '-')} ${p.name}`.replace(/[\\/:*?"<>|]+/g, ' ').trim() + '.pdf';
   }
   function folderName(store, p) {
     return `${quoteNo(store, p, false).replace(/\//g, '-')} ${p.name}`.replace(/[\\/:*?"<>|]+/g, ' ').trim();
   }
-  return { build, fileName, folderName };
+  return { build, buildProject, fileName, folderName, projectFileName, projectFolderName };
 })();

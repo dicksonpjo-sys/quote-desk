@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.6.0 — 25 Nov 2026
+- **Project page:** tap a project card (e.g. Mayan) to open it. Every quote is listed with its bills collapsed (heading, payment, amount); tap a bill or "Expand all" to see each breakdown. Tap a quote to edit it or export its own PDF, as before.
+- **Project PDF:** one "Project statement" for the whole project: page 1 lists every quote with its bills, payment status and one grand total (received and balance when paid); then the breakdown of every bill grouped by quote. Shows all quote numbers and today's date; lead quote's terms, signature and bank details.
+- **Project cards readable:** each quote's title is on its own line, with the number and status under it.
+- **Studio Console look:** graphite and green colours, Manrope font, numbers in JetBrains Mono, pill buttons (light and dark), bundled for offline use. Tidier quote details and bill headings on phones.
+
 ## v1.5.0 — 25 Nov 2026
 - **One heading per bill, fully yours.** Each bill has one heading box; exactly that text is used in the app, on the PDF's page 1 and as the breakdown heading. "Initial Bill / Additional Bill A" is only the grey hint when the box is empty, never forced onto the PDF. Bills that had a separate "line on the quotation page" now use that line as their heading (Dickson's choice). The optional note under the heading stays.
 - **Project groups.** Quote menu ⋯ → "Group with another quote": quotes of the same film (e.g. Mayan and Mayan (Additional)) show as one project card on the dashboard with every quote listed and a combined total, received and due. Each quote keeps its own number, PDF and payments. Quote Details shows the other quotes of the project.

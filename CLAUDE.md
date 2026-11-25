@@ -6,7 +6,7 @@ must not break, and how to test and ship a change.
 - **Owner:** Dickson P Jo (VishwaaFX, Kochi). Talks in short messages; wants to see what you are
   doing as you do it, and to approve anything that changes live data or goes live.
 - **Live app:** https://dicksonpjo-sys.github.io/quote-desk/ (GitHub Pages, `main` branch, root folder)
-- **Current version:** v1.5.0 (`APP_VERSION` in `js/data.js`)
+- **Current version:** v1.6.0 (`APP_VERSION` in `js/data.js`)
 - **Accounts:** studio data owner **vishwaafxacc@gmail.com**; extra users **vishwaafx@gmail.com** and
   **dicksonpjo@gmail.com** (both Editor). Dickson dictates by voice, so emails can arrive misspelt
   ("visualfx", "dixonpjo"); these three are the real ones.
@@ -32,12 +32,12 @@ Two kinds of documents, chosen on the start screen:
 | `js/data.js` | `APP_VERSION`, data model, default settings (company, banks, note blocks, templates), number formats, calculations, quote numbering, `mergeStores`, `buildIndex` (Studio Console file), `versionsOf` / `diffVersions` (Versions tab). |
 | `tests/fixtures/sample.js` | Test-only quotes rebuilt from real PDFs (fixed ids `sample_*`). Not loaded by the app since v1.3.2: the repo and site are public. |
 | `js/sync.js` | Google sign-in (OAuth token redirect flow) and every Drive call: shared studio file, merge, PDFs, versioned backups, sharing. |
-| `js/pdf.js` | PDF builder (pdf-lib). Monochrome letterhead, summary page + breakdown pages, single page, supervision bill, page selection. |
+| `js/pdf.js` | PDF builder (pdf-lib). Monochrome letterhead, summary page + breakdown pages, single page, supervision bill, project statement (`buildProject`, v1.6.0), page selection. |
 | `js/app.js` | All screens, actions, PDF viewer (pdf.js), sync loop, restore, boot. |
-| `css/app.css` | App styles (green VishwaaFX theme, light + dark). The PDF does not use these. |
+| `css/app.css` | App styles: Studio Console graphite + green theme (v1.6.0), light + dark. The PDF does not use these. |
 | `sw.js` | Service worker: offline cache. Bump `CACHE` name on each release. |
 | `vendor/` | pdf-lib (PDF writing) and pdf.js (PDF preview), bundled so the app works offline. |
-| `fonts/` | Poppins subset (OFL). |
+| `fonts/` | Manrope + JetBrains Mono woff2, latin (OFL), since v1.6.0 (Studio Console look). |
 | `logo.png`, `logo_mono.png` | Colour logo (letterhead) and grey logo (PDF watermark). |
 
 ## Data model (stored in localStorage `vfxq.data.v2` and in Drive)
@@ -182,5 +182,7 @@ Run it after any change to `js/sync.js`, `mergeStores` or restore.
   v5.18 on top of the live Studio Console v5.17).
 - **v1.5.0 — Bill headings + project groups + sort + compact UI** (25 Nov 2026). Studio Console follow-up
   prompt: `docs/STUDIO_CONSOLE_PROMPT_v1.5.md` (Approved / In Progress by default, groups, headings).
+- **v1.6.0 — Project page + project PDF + Studio Console look** (25 Nov 2026). Route `group` (VIEWS.group),
+  `QuotePDF.buildProject`; no change to the Studio Console file.
 - **Later ideas:** Malayalam in PDFs (embedded Unicode font), VFX Edit Tool Kit CSV import, private repo
   (needs GitHub Pro to keep Pages).

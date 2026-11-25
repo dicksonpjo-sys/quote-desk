@@ -1,30 +1,34 @@
 /* VishwaaFX Quote Desk
    Layout: one narrow working column (phone-first, max 760px), a deep-green summary band
    on the dashboard as the single brand moment, white working cards everywhere else. */
-@font-face { font-family: 'Poppins'; font-weight: 400; font-display: swap; src: url('../fonts/Poppins-Regular.ttf') format('truetype'); }
-@font-face { font-family: 'Poppins'; font-weight: 500; font-display: swap; src: url('../fonts/Poppins-Medium.ttf') format('truetype'); }
-@font-face { font-family: 'Poppins'; font-weight: 700; font-display: swap; src: url('../fonts/Poppins-Bold.ttf') format('truetype'); }
+/* Theme (v1.6.0): Studio Console's graphite and green, Manrope for text, JetBrains Mono for numbers. */
+@font-face { font-family: 'Manrope'; font-weight: 400; font-display: swap; src: url('../fonts/Manrope-400.woff2') format('woff2'); }
+@font-face { font-family: 'Manrope'; font-weight: 500; font-display: swap; src: url('../fonts/Manrope-500.woff2') format('woff2'); }
+@font-face { font-family: 'Manrope'; font-weight: 600; font-display: swap; src: url('../fonts/Manrope-600.woff2') format('woff2'); }
+@font-face { font-family: 'Manrope'; font-weight: 700; font-display: swap; src: url('../fonts/Manrope-700.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-weight: 400; font-display: swap; src: url('../fonts/JetBrainsMono-400.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-weight: 500; font-display: swap; src: url('../fonts/JetBrainsMono-500.woff2') format('woff2'); }
 
 :root {
-  --bg: #f2f5f3; --surface: #ffffff; --surface-2: #e9efec; --ink: #13201b; --muted: #5b6c65; --line: #d6e0db;
-  --brand: #11765c; --brand-ink: #0b4a3a; --brand-soft: #e0f1eb; --on-brand: #ffffff; --mint: #a6dccd;
-  --ok: #23774a; --ok-bg: #e1f2e7; --warn: #9a5c06; --warn-bg: #fbefd8; --bad: #b0402b; --bad-bg: #fbe4dd;
-  --info: #2c5b86; --info-bg: #e2ebf5; --grey-bg: #ebeeed;
-  --shadow: 0 1px 2px rgb(18 40 32 / .06), 0 4px 14px rgb(18 40 32 / .06);
-  --font: 'Poppins', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
-  --r: 14px; --r-sm: 9px;
+  --bg: #F5F6F3; --surface: #FFFFFF; --surface-2: #EEF0EB; --ink: #191B18; --muted: #64685E; --line: #DADDD4;
+  --brand: #1E8549; --brand-ink: #1A1C19; --brand-soft: #E2F2E8; --on-brand: #FFFFFF; --mint: #8FD9AE;
+  --ok: #1E8549; --ok-bg: #E2F2E8; --warn: #8C5E0E; --warn-bg: #FAF0DA; --bad: #B3402A; --bad-bg: #FBE6E0;
+  --info: #2C5B86; --info-bg: #E3EBF4; --grey-bg: #ECEEE8;
+  --shadow: 0 1px 2px rgb(25 27 24 / .06);
+  --font: 'Manrope', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  --r: 14px; --r-sm: 10px;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #0d1412; --surface: #15201c; --surface-2: #1c2a25; --ink: #e4eeea; --muted: #93a59e; --line: #283731;
-  --brand: #3aad8b; --brand-ink: #0f3a2f; --brand-soft: #173a30; --on-brand: #ffffff; --mint: #7fcbb6;
-  --ok: #6fd19a; --ok-bg: #173b28; --warn: #f0b960; --warn-bg: #3d2c10; --bad: #f08d78; --bad-bg: #432019;
-  --info: #8db8e3; --info-bg: #182c40; --grey-bg: #222d29; --shadow: 0 1px 2px rgb(0 0 0 / .3); color-scheme: dark; } }
+  --bg: #121311; --surface: #1A1B19; --surface-2: #22241F; --ink: #ECEEE7; --muted: #9A9D91; --line: #2E302B;
+  --brand: #57D98A; --brand-ink: #0E0F0D; --brand-soft: rgba(87,217,138,.13); --on-brand: #0F130F; --mint: #8FD9AE;
+  --ok: #57D98A; --ok-bg: rgba(87,217,138,.13); --warn: #E0B86E; --warn-bg: rgba(224,184,110,.12); --bad: #F08D78; --bad-bg: rgba(240,141,120,.13);
+  --info: #8DB8E3; --info-bg: rgba(141,184,227,.12); --grey-bg: #24261F; --shadow: none; color-scheme: dark; } }
 :root[data-theme="dark"] {
-  --bg: #0d1412; --surface: #15201c; --surface-2: #1c2a25; --ink: #e4eeea; --muted: #93a59e; --line: #283731;
-  --brand: #3aad8b; --brand-ink: #0f3a2f; --brand-soft: #173a30; --on-brand: #ffffff; --mint: #7fcbb6;
-  --ok: #6fd19a; --ok-bg: #173b28; --warn: #f0b960; --warn-bg: #3d2c10; --bad: #f08d78; --bad-bg: #432019;
-  --info: #8db8e3; --info-bg: #182c40; --grey-bg: #222d29; --shadow: 0 1px 2px rgb(0 0 0 / .3); color-scheme: dark; }
+  --bg: #121311; --surface: #1A1B19; --surface-2: #22241F; --ink: #ECEEE7; --muted: #9A9D91; --line: #2E302B;
+  --brand: #57D98A; --brand-ink: #0E0F0D; --brand-soft: rgba(87,217,138,.13); --on-brand: #0F130F; --mint: #8FD9AE;
+  --ok: #57D98A; --ok-bg: rgba(87,217,138,.13); --warn: #E0B86E; --warn-bg: rgba(224,184,110,.12); --bad: #F08D78; --bad-bg: rgba(240,141,120,.13);
+  --info: #8DB8E3; --info-bg: rgba(141,184,227,.12); --grey-bg: #24261F; --shadow: none; color-scheme: dark; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -344,3 +348,52 @@ details.acc > summary { padding-block: 2px; }
 .line .l2 input { padding: 5px 7px; }
 .type-t { padding: 5px 6px; }
 .sec-foot .totrow { font-size: 13px; }
+
+/* ---------- v1.6.0: Studio Console look ---------- */
+.money, .band-total, .stat b, .tot b, .pcard .val { font-variant-numeric: tabular-nums; }
+.qno, .sec-h .idx, .colh { font-family: var(--mono); }
+.btn { border-radius: 999px; font-weight: 600; font-size: 13.5px; }
+.btn.sm { font-size: 12.5px; }
+.chip { font-weight: 600; }
+.seg { border-radius: 999px; }
+.seg button { border-radius: 999px; font-weight: 600; }
+.band { border: 1px solid var(--line); }
+.band .band-total { color: #fff; }
+.band .stat b.money { color: #fff; }
+.eyebrow, .lbl { letter-spacing: .08em; font-weight: 700; }
+.pill { font-weight: 600; }
+.pcard h3, .card > h2 { letter-spacing: -.005em; }
+.fab { border-radius: 999px; font-weight: 700; }
+input[type=text], input[type=number], input[type=date], input[type=email], input[type=tel], input[type=search], select, textarea { border-radius: 10px; }
+
+/* project card on the dashboard: title first, number + status under it */
+.gcard { padding: 0; overflow: hidden; }
+.ghead { display: grid; gap: 2px; width: 100%; text-align: left; border: 0; background: transparent; color: inherit; padding: 10px 12px 6px; cursor: pointer; }
+.ghead .top { display: flex; justify-content: space-between; align-items: center; }
+.ghead .open, .qrow .open { font-size: 12px; font-weight: 700; color: var(--brand); }
+.ghead .client { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gcard .glist { margin: 0 12px; }
+.gcard .foot { padding: 6px 12px 10px; }
+.grow-q { grid-template-columns: 1fr auto; grid-template-areas: 'nm amt' 'sub sub'; row-gap: 2px; padding: 8px 0; }
+.grow-q .nm { grid-area: nm; font-weight: 600; font-size: 14px; white-space: normal; overflow: visible; line-height: 1.3; }
+.grow-q .money { grid-area: amt; align-self: start; }
+.grow-q .sub { grid-area: sub; display: flex; gap: 8px; align-items: center; }
+
+/* project page */
+.qcard { display: grid; gap: 6px; }
+.qrow { display: grid; grid-template-columns: 1fr auto; grid-template-areas: 'nm amt' 'sub sub'; gap: 2px 8px; width: 100%; text-align: left; border: 0; background: transparent; color: var(--ink); padding: 0; cursor: pointer; }
+.qrow .nm { grid-area: nm; font-weight: 700; font-size: 15px; line-height: 1.3; }
+.qrow .money { grid-area: amt; font-size: 15px; }
+.qrow .sub { grid-area: sub; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.qrow .sub .open { margin-left: auto; }
+.bills { display: grid; border-top: 1px solid var(--line); }
+details.bill { border-bottom: 1px dashed var(--line); padding: 7px 0; }
+details.bill:last-child { border-bottom: 0; }
+details.bill > summary { list-style: none; display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; cursor: pointer; font-size: 13.5px; }
+details.bill > summary::-webkit-details-marker { display: none; }
+details.bill > summary .nm::before { content: '›'; display: inline-block; width: 14px; color: var(--muted); transition: transform .15s; }
+details.bill[open] > summary .nm::before { transform: rotate(90deg); }
+details.bill .vt { margin-top: 6px; }
+details.bill .totrow { font-size: 12.5px; margin-top: 4px; }
+.colh { font-family: var(--font); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; }
+.qhead .grid2 { row-gap: 6px; }

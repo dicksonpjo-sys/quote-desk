@@ -33,7 +33,7 @@ function persist() {
 }
 /* View only accounts (v1.3.1): quotes open and PDFs preview, nothing can be changed. */
 const readOnly = () => Drive.isConnected() && store.meta.syncMode === 'view';
-const VIEW_OK = new Set(['viewver', 'compare', 'back', 'cat', 'closesheet', 'closeviewer', 'confirmok', 'connect', 'disconnect', 'drivebackups', 'export', 'kind', 'open', 'pdf', 'allpages', 'reauth', 'sharepdf', 'syncnow', 'syncpill', 'tab']);
+const VIEW_OK = new Set(['opengroup', 'projpdf', 'expandall', 'viewver', 'compare', 'back', 'cat', 'closesheet', 'closeviewer', 'confirmok', 'connect', 'disconnect', 'drivebackups', 'export', 'kind', 'open', 'pdf', 'allpages', 'reauth', 'sharepdf', 'syncnow', 'syncpill', 'tab']);
 function touchP(p) { p.updatedAt = nowISO(); persist(); }
 function touchS() { store.settings.updatedAt = nowISO(); persist(); }
 
@@ -299,17 +299,70 @@ function homeList() {
   const list = dashboardItems(store, match, ui.sort);
   return list.length ? list.map(it => it.group ? gcard(it) : pcard(it.lead)).join('') : `<div class="card empty"><b>${ui.q || ui.status !== 'All' ? 'No matching quotes' : 'No quotes here yet'}</b>${ui.q || ui.status !== 'All' ? 'Try another search or status.' : 'Tap “New quote” to start one.'}</div>`;
 }
+/* ---------- project page (v1.6.0): every quote of a group, bills collapsed, one project PDF ---------- */
+ACT.opengroup = el => go({ name: 'group', id: el.dataset.v, kind: ui.kind });
+VIEWS.group = () => {
+  const gid = route.id; const qs = groupMembers(store, gid).sort((a, b) => String(a.fy).localeCompare(String(b.fy)) || a.seq - b.seq || a.rev - b.rev);
+  if (qs.length < 2) { route = { name: 'home', kind: ui.kind }; return VIEWS.home(); }
+  const name = groupName(store, gid);
+  const total = qs.reduce((a, p) => a + projectValue(p), 0), rec = qs.reduce((a, p) => a + projectReceived(p), 0), due = qs.reduce((a, p) => a + projectPending(p), 0);
+  const bill = (p, sec, i) => `<details class="bill"><summary><span class="nm">${esc(secTitle(p, i))}</span>${statusPill(sec.pay?.status || 'Pending')}<b class="money">${rs(secNet(sec))}</b></summary>
+      <table class="vt"><thead><tr><th>Description</th><th class="r">Sec × Rate</th><th class="r">Amount</th></tr></thead><tbody>
+      ${sec.lines.map(l => `<tr><td>${esc(l.desc || '—')}</td><td class="r">${l.type === 'lump' ? '' : `${inr(num(l.sec))} × ${inr(num(l.rate))}`}</td><td class="r">${rs(lineAmount(l))}</td></tr>`).join('')}</tbody></table>
+      ${secDiscount(sec) ? `<div class="totrow"><span class="muted">Discount</span><span class="money">− ${rs(secDiscount(sec))}</span></div>` : ''}
+      ${secDuration(sec) ? `<div class="totrow"><span class="muted">Screen time</span><span>${secDuration(sec)} sec · ${mmss(secDuration(sec))}</span></div>` : ''}</details>`;
+  const cards = qs.map(p => {
+    const secs = p.mode === 'tiers' ? p.sections.filter(x => !p.selectedTier || x.id === p.selectedTier) : p.sections;
+    return `<section class="card qcard"><button class="qrow" data-act="open" data-id="${p.id}">
+        <span class="nm">${esc(p.name)}</span><b class="money">${rs(projectValue(p))}</b>
+        <span class="sub"><span class="qno">${esc(quoteNo(store, p))}</span>${statusPill(p.status)}<span class="muted">${fmtDate(p.date)}</span><span class="open">Open ›</span></span></button>
+      <div class="bills">${secs.map(sec => bill(p, sec, p.sections.indexOf(sec))).join('')}</div></section>`;
+  }).join('');
+  const body = `<section class="band"><div><div class="eyebrow">Project total · excl. GST</div><div class="band-total money">${rs(total)}</div></div>
+      <div class="stats"><div class="stat"><b class="money">${rs(rec)}</b><span>Received</span></div><div class="stat"><b class="money">${rs(due)}</b><span>Due · approved</span></div><div class="stat"><b>${qs.length}</b><span>Quotes</span></div></div></section>
+    <div class="row"><button class="btn primary" data-act="projpdf">${I.pdf}Project PDF</button><button class="btn" data-act="expandall" id="expandall">Expand all</button></div>
+    ${cards}
+    <div class="muted" style="font-size:12px">Tap a quote to edit it or export its own PDF. Project PDF puts every quote and bill in one file.</div>`;
+  return { title: name, sub: `Project · ${qs.length} quotes`, back: true, body };
+};
+ACT.expandall = el => {
+  const all = [...document.querySelectorAll('details.bill')]; const open = !all.every(d => d.open);
+  all.forEach(d => { d.open = open; }); el.textContent = open ? 'Collapse all' : 'Expand all';
+};
+ACT.projpdf = async () => {
+  const gid = route.id; const qs = groupMembers(store, gid).sort((a, b) => String(a.fy).localeCompare(String(b.fy)) || a.seq - b.seq || a.rev - b.rev);
+  const name = groupName(store, gid);
+  const v = document.createElement('div'); v.className = 'viewer'; v.id = 'viewer';
+  v.innerHTML = `<header><button class="iconbtn" data-act="closeviewer" aria-label="Close">${I.x}</button>
+      <div style="flex:1;min-width:0"><b>Project statement</b><div class="muted" style="font-size:12px">${esc(name)} · ${qs.length} quotes</div></div>
+      <button class="chip on" id="allpages" data-act="allpages">All pages</button></header>
+    <div class="pages"><div class="muted" style="color:#cfd8d4;padding:40px">Building PDF…</div></div>
+    <footer><div class="pagesel" id="pagesel">Exporting all pages</div>
+      <button class="btn primary" data-act="sharepdf">Share / Download</button>
+      <button class="btn" data-act="drivepdf" ${Drive.isConnected() ? '' : 'disabled'}>Save to Drive</button></footer>`;
+  document.body.appendChild(v);
+  try {
+    const build = opts => QuotePDF.buildProject(store, qs, name, opts);
+    const bytes = await build();
+    lastPdf = { p: qs[0], bytes, build, name: QuotePDF.projectFileName(name), folder: QuotePDF.projectFolderName(name), n: 0, current: false };
+    lastPdf.n = await renderPages(bytes, v.querySelector('.pages'));
+    updatePageSel();
+  } catch (err) { console.error(err); v.querySelector('.pages').innerHTML = `<div class="warnbox">The PDF could not be built: ${esc(err.message)}</div>`; }
+};
+
 /* A project group: one card, every quote in it as a row, combined total / received / due (v1.5.0) */
 function gcard(it) {
   const qs = it.quotes;
   const total = qs.reduce((a, p) => a + projectValue(p), 0);
   const committed = qs.filter(isCommitted), cv = committed.reduce((a, p) => a + projectValue(p), 0);
   const rec = qs.reduce((a, p) => a + projectReceived(p), 0), due = qs.reduce((a, p) => a + projectPending(p), 0);
-  const rows = qs.map(p => `<button class="grow-q" data-act="open" data-id="${p.id}"><span class="qno">${esc(quoteNo(store, p))}</span>
-      <span class="nm">${esc(p.name)}</span>${statusPill(p.status)}<span class="money">${rs(projectValue(p))}</span></button>`).join('');
+  const rows = qs.map(p => `<button class="grow-q" data-act="open" data-id="${p.id}">
+      <span class="nm">${esc(p.name)}</span><span class="money">${rs(projectValue(p))}</span>
+      <span class="sub"><span class="qno">${esc(quoteNo(store, p))}</span>${statusPill(p.status)}</span></button>`).join('');
   return `<div class="pcard gcard">
-    <div class="top"><span class="eyebrow">Project · ${qs.length} quotes</span><span class="tag">${esc(qs[0].client || '—')}</span></div>
-    <h3>${esc(it.name)}</h3>
+    <button class="ghead" data-act="opengroup" data-v="${it.group}">
+      <span class="top"><span class="eyebrow">Project · ${qs.length} quotes</span><span class="open">Open ›</span></span>
+      <h3>${esc(it.name)}</h3><span class="client">${esc(qs[0].client || '—')}</span></button>
     <div class="glist">${rows}</div>
     <div class="foot"><div class="val money"><small>Project total</small>${rs(total)}</div>
       ${cv ? `<div style="min-width:120px"><div class="meter"><i style="width:${Math.min(100, rec / cv * 100)}%"></i></div><div class="paysum">${rs(rec)} in · <b>${rs(due)}</b> due</div></div>` : '<div class="paysum">Nothing approved yet</div>'}</div>
@@ -404,10 +457,10 @@ VIEWS.project = () => {
         <input type="text" id="p_client" data-bind="p:client" value="${esc(p.client)}"></label>
       ${sup ? '' : `<label class="f">Category<select id="p_cat" data-bind="p:category">${s.categories.map(c => `<option ${c === p.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>`}
       <label class="f">${sup ? 'Bill' : 'Quote'} date<input type="date" id="p_date" data-bind="p:date" value="${p.date}"></label>
-      ${sup ? '' : `<label class="f">Valid for (days) · till <span data-calc="pvalid"></span><input type="text" inputmode="numeric" id="p_valid" data-bind="p:validDays" data-int value="${p.validDays}"></label>`}
+      ${sup ? '' : `<label class="f">Valid days · till <span data-calc="pvalid"></span><input type="text" inputmode="numeric" id="p_valid" data-bind="p:validDays" data-int value="${p.validDays}"></label>`}
       ${p.groupId && groupMembers(store, p.groupId).length > 1 ? `<div class="f gline" style="grid-column:1/-1">Project “${esc(groupName(store, p.groupId))}” · ${groupMembers(store, p.groupId).length} quotes
-        <div class="row" style="gap:6px">${groupMembers(store, p.groupId).sort(SORTS.number[1]).map(x => `<button class="chip ${x.id === p.id ? 'on' : ''}" data-act="open" data-id="${x.id}">${esc(quoteNo(store, x))}</button>`).join('')}</div></div>` : ''}
-      <label class="f">Studio project ID<input type="text" id="p_studio" data-bind="p:studioId" value="${esc(p.studioId || '')}" placeholder="Optional" autocomplete="off"></label>
+        <div class="row" style="gap:6px">${groupMembers(store, p.groupId).sort(SORTS.number[1]).map(x => `<button class="chip ${x.id === p.id ? 'on' : ''}" data-act="open" data-id="${x.id}">${esc(quoteNo(store, x))}</button>`).join('')}<button class="chip" data-act="opengroup" data-v="${p.groupId}">Open project ›</button></div></div>` : ''}
+      <label class="f" style="grid-column:1/-1">Studio project ID<input type="text" id="p_studio" data-bind="p:studioId" value="${esc(p.studioId || '')}" placeholder="Optional" autocomplete="off"></label>
     </div>
   </section>
   <div class="tabs"><div class="seg">${tabs.map(([k, l]) => `<button class="${ui.tab === k ? 'on' : ''}" data-act="tab" data-v="${k}">${l}</button>`).join('')}</div></div>`;
@@ -501,7 +554,7 @@ function secCard(p, sec, i) {
             <option value="sum" ${sec.durMode === 'sum' ? 'selected' : ''}>Add up all lines</option>
             <option value="max" ${sec.durMode === 'max' ? 'selected' : ''}>Same shots – longest line</option>
             <option value="manual" ${sec.durMode === 'manual' ? 'selected' : ''}>Type it in</option></select></label>
-          ${sec.durMode === 'manual' ? `<label class="f">Screen time (sec)<input type="text" inputmode="numeric" id="dmv_${sec.id}" data-bind="sec:${sec.id}:durManual" value="${esc(sec.durManual)}"></label>` : `<div class="f" style="font-size:12px;color:var(--muted)">Duration<b style="color:var(--ink);font-size:14px" data-calc="sdur:${sec.id}"></b></div>`}
+          ${sec.durMode === 'manual' ? `<label class="f">Screen time (sec)<input type="text" inputmode="numeric" id="dmv_${sec.id}" data-bind="sec:${sec.id}:durManual" value="${esc(sec.durManual)}"></label>` : `<div class="f" style="font-size:12px;color:var(--muted)"><span>Duration</span><b style="color:var(--ink);font-size:14px" data-calc="sdur:${sec.id}"></b></div>`}
         </div>
         <div class="warnbox" data-show="durwarn:${sec.id}">Every line has the same seconds. If these are departments on the same shots, choose “Same shots – longest line” so the PDF does not show inflated screen time.</div>
         <div class="grid2">
@@ -1241,7 +1294,7 @@ async function exportBytes() {
   const sel = selectedPages();
   if (!sel.length) { toast('Tick at least one page to export.'); return null; }
   if (sel.length === lastPdf.n) return { bytes: lastPdf.bytes, name: lastPdf.name };
-  const bytes = await QuotePDF.build(store, lastPdf.p, { pages: sel });
+  const bytes = lastPdf.build ? await lastPdf.build({ pages: sel }) : await QuotePDF.build(store, lastPdf.p, { pages: sel });
   return { bytes, name: lastPdf.name.replace(/\.pdf$/, ` (page${sel.length > 1 ? 's' : ''} ${sel.map(i => i + 1).join('-')}).pdf`) };
 }
 ACT.sharepdf = async () => {

@@ -72,6 +72,17 @@ const srv = http.createServer((q, r) => {
     ok(`${t} tab: last card clear of the total bar (${Math.round(last)} < ${Math.round(bar)})`, last <= bar);
   }
   ok('quote tab: labelled sections and column headings', await pg.evaluate(() => { ui.tab = 'quote'; render(); const t = document.body.innerText; return /DETAILS/.test(t) && /BILLS/.test(t) && /TOTALS & PAYMENTS/.test(t) && !!document.querySelector('.colh'); }));
+  // v1.6.0: project page (bills collapsed, Expand all) and one project PDF
+  await pg.evaluate(() => { const qs = store.projects.filter(x => !x.deleted && kindOf(x) === 'quote').slice(0, 2); qs.forEach(q => { q.groupId = qs[0].id; touchP(q); }); ui.kind = 'quote'; ui.cat = 'All'; ui.status = 'All'; ui.q = ''; go({ name: 'home', kind: 'quote' }); });
+  await pg.waitForTimeout(200);
+  ok('dashboard shows the project card', await pg.evaluate(() => !!document.querySelector('.gcard [data-act=opengroup]')));
+  await pg.evaluate(() => document.querySelector('[data-act=opengroup]').click()); await pg.waitForTimeout(200);
+  ok('project page: bills start collapsed', await pg.evaluate(() => { const d = [...document.querySelectorAll('details.bill')]; return d.length > 1 && d.every(x => !x.open); }));
+  await pg.evaluate(() => document.getElementById('expandall').click());
+  ok('project page: Expand all opens every bill', await pg.evaluate(() => [...document.querySelectorAll('details.bill')].every(x => x.open)));
+  await pg.evaluate(() => ACT.projpdf()); await pg.waitForTimeout(3500);
+  ok('project PDF builds with every quote', await pg.evaluate(() => document.querySelectorAll('#viewer [data-pg]').length >= 2 && /Project statement/.test(lastPdf.name)));
+  await pg.evaluate(() => ACT.closeviewer());
   await pg.evaluate(() => go({ name: 'settings', kind: 'quote' })); await pg.waitForTimeout(300);
   ok('settings', await pg.evaluate(() => /Google Drive/.test(document.body.innerText)));
   ok('no page or console errors', errs.length === 0, JSON.stringify(errs));
