@@ -1,4 +1,4 @@
-# VishwaaFX Quote Desk — what it does (v1.6.0)
+# VishwaaFX Quote Desk — what it does (v1.7.0)
 
 Live app: https://dicksonpjo-sys.github.io/quote-desk/
 
@@ -47,6 +47,9 @@ Numbers follow the Indian financial year (April–March) and restart at 001 ever
   the same shots (so 5 × 21 s shows 21 s, not 63 s), or type it in. The app warns when every line has
   the same seconds.
 - **Payments per bill:** Pending / Partial (with the amount) / Paid, with the date. Totals feed the dashboard.
+- **Payments from Studio Console (v1.7.0):** payments recorded in Studio Console appear on each bill
+  ("From Studio Console", with every receipt) and override what was marked here; receipts not linked
+  to a bill show as "Unassigned receipts".
 - **Revisions:** "Start revision R1" keeps the sent version and continues as `…/001-R1`. Any older
   version can be restored.
 - **Duplicate**, **delete**, and **copy from an earlier quote** when creating a new one.

@@ -1,4 +1,4 @@
-# quote_desk_index.json — format for Studio Console (v1.5.0)
+# quote_desk_index.json — format for Studio Console (v1.7.0)
 
 Where: `My Drive/VishwaaFX Quotes/quote_desk_index.json` in **vishwaafxacc@gmail.com**, next to
 `vishwaafx_quotes_data.json`. Studio Console only **reads** it.
@@ -38,7 +38,7 @@ Where: `My Drive/VishwaaFX Quotes/quote_desk_index.json` in **vishwaafxacc@gmail
       "title": "",                     // the heading as typed ("" when none): show `heading` instead
       "gross": 900000, "discount": 0, "amount": 900000,
       "screenTimeSec": 955,            // null for supervision
-      "payment": { "status": "Paid", "received": 900000, "date": "2026-10-02" }  // Pending | Partial | Paid
+      "payment": { "status": "Paid", "received": 900000, "date": "2026-10-02", "source": "console" }  // Pending | Partial | Paid; source v1.7.0: "console" = from studio_console_receipts.json, "desk" = marked in Quote Desk
     }],
     "pdf": { "name": "…pdf", "savedAt": "…", "link": "https://drive.google.com/file/d/<id>/view" }  // null if never saved to Drive
   }]

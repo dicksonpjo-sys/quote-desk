@@ -346,7 +346,7 @@ const QuotePDF = (() => {
       const rows = p.sections.map((sec, i) => {
         const d = secTitle(p, i);
         const c = [{ t: String(i + 1), color: SOFT }, { t: d }];
-        if (showPay) c.push({ pay: sec.pay?.status || 'Pending' });
+        if (showPay) c.push({ pay: payOf(p, sec).status });
         c.push({ t: money(secNet(sec)) });
         return { cells: c };
       });
@@ -404,7 +404,7 @@ const QuotePDF = (() => {
     const rows = [];
     quotes.forEach(q => {
       rows.push({ strong: true, cells: [{ t: '' }, { t: `${quoteNo(store, q)}   ${q.name}` }, { t: q.status, color: MID }, { t: money(projectValue(q)) }] });
-      billsOf(q).forEach((sec, j) => rows.push({ cells: [{ t: String(j + 1), color: SOFT }, { t: secTitle(q, q.sections.indexOf(sec)) }, { pay: sec.pay?.status || 'Pending' }, { t: money(secNet(sec)) }] }));
+      billsOf(q).forEach((sec, j) => rows.push({ cells: [{ t: String(j + 1), color: SOFT }, { t: secTitle(q, q.sections.indexOf(sec)) }, { pay: payOf(q, sec).status }, { t: money(secNet(sec)) }] }));
     });
     table([{ w: 26, head: '#', align: 'center' }, { w: null, head: 'Quote / bill' }, { w: 86, head: 'Payment' }, { w: 110, head: 'Amount', align: 'right' }], rows, main);
     const total = quotes.reduce((a, q) => a + projectValue(q), 0), rec = quotes.reduce((a, q) => a + projectReceived(q), 0);

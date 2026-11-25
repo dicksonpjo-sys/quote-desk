@@ -339,6 +339,34 @@ async def main():
         await sync(Dv); check('index: View only account never writes it', (st['mode'], idx_files()[0]['mt']), ('view', mt))
         check('index: no page errors', errs, [])
         print('INDEX TEST', 'FAILED' if len(fails) > nb else 'PASSED')
+
+        # ---- v1.7.0: payments recorded in Studio Console reach Quote Desk ----
+        nb = len(fails)
+        data = json.loads([f for f in DRIVE.values() if f['name'] == 'vishwaafx_quotes_data.json' and f['owner'] == NEW][0]['content'])
+        q = [x for x in data['projects'] if x['name'] == 'Index live test'][0]; bill = q['sections'][0]['id']
+        scf = new('VFX Studio Console', FOLDER, 'root', NEW)
+        scf['perms'] += [{'id': 'p801', 'email': 'vishwaafx@gmail.com', 'role': 'reader'}, {'id': 'p802', 'email': 'dicksonpjo@gmail.com', 'role': 'reader'}]
+        rf = new('studio_console_receipts.json', 'application/json', scf['id'], NEW, json.dumps({'schema': 1, 'generatedAt': '2026-11-25T10:00:00Z', 'receipts': [
+            {'id': 'r1', 'quoteId': q['id'], 'billId': bill, 'amount': 7000, 'date': '2026-11-24', 'ref': 'NEFT'},
+            {'id': 'r2', 'quoteId': q['id'], 'billId': None, 'amount': 500, 'date': '2026-11-25'}]}))
+        await sync(V2)
+        got = await V2.evaluate(f"(() => {{ const p = store.projects.find(x => x.id === '{q['id']}'); const r = payOf(p, p.sections[0]); return [r.source, r.status, r.received, projectReceived(p)]; }})()")
+        check('receipts: Studio Console payment shows on the Editor phone', got, ['console', 'Partial', 7000, 7500])
+        iq = [x for x in idx()['quotes'] if x['id'] == q['id']][0]
+        check('receipts: Studio Console file carries the same payment', (iq['bills'][0]['payment']['received'], iq['bills'][0]['payment']['source'], iq['received']), (7000, 'console', 7500))
+        check('receipts: never copied into the quotes data file', 'scReceipts' in [f for f in DRIVE.values() if f['name'] == 'vishwaafx_quotes_data.json' and f['owner'] == NEW][0]['content'], False)
+        rf['content'] = json.dumps({'schema': 1, 'generatedAt': '2026-11-25T11:00:00Z', 'receipts': [
+            {'id': 'r1', 'quoteId': q['id'], 'billId': bill, 'amount': 7000, 'date': '2026-11-24'},
+            {'id': 'r3', 'quoteId': q['id'], 'billId': bill, 'amount': 3000, 'date': '2026-11-25'}]}); rf['mt'] = mtime()
+        await sync(A); await A.evaluate(f"go({{name:'project', id:'{q['id']}', kind:'quote'}})"); await A.evaluate("ui.tab = 'pay'; render()"); await A.wait_for_timeout(300)
+        txt = await A.evaluate("document.querySelector('main').innerText")
+        check('receipts: a new receipt is picked up; bill now Paid on the owner phone', ('Paid' in txt and 'From Studio Console' in txt and 'Unassigned' not in txt), True)
+        check('receipts: the Quote Desk buttons are hidden for that bill', await A.evaluate("!document.querySelector('[data-act=paystat]')"), True)
+        if os.environ.get('SHOTS'): await A.screenshot(path=os.path.join(os.environ['SHOTS'], 'receipts_payments.png'))
+        await A.evaluate("go({name:'settings', kind:'quote'})"); await A.wait_for_timeout(300)
+        check('receipts: Settings says where payments come from', '2 receipts' in await A.evaluate("document.body.innerText"), True)
+        check('receipts: no page errors', errs, [])
+        print('RECEIPTS TEST', 'FAILED' if len(fails) > nb else 'PASSED')
         await b.close()
         if fails: sys.exit(1)
 try: asyncio.run(main())

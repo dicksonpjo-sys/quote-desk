@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.7.0 — 25 Nov 2026
+- **Payments from Studio Console.** Quote Desk reads `studio_console_receipts.json` (published by Studio Console in its own Drive folder) on every sync. A bill with receipts there shows Studio Console's figures (Paid / Partial, amount, latest date, each receipt listed); a bill with none keeps what was marked in Quote Desk. Receipts not tied to a bill show as "Unassigned receipts" and count in the quote's received total. Dashboard, project page, PDFs and the Studio Console summary file all use the combined figures. Settings shows how many receipts came in and when. Format: `docs/STUDIO_CONSOLE_RECEIPTS.md`; Studio Console prompt: `docs/STUDIO_CONSOLE_PROMPT_v1.7.md`.
+
 ## v1.6.0 — 25 Nov 2026
 - **Project page:** tap a project card (e.g. Mayan) to open it. Every quote is listed with its bills collapsed (heading, payment, amount); tap a bill or "Expand all" to see each breakdown. Tap a quote to edit it or export its own PDF, as before.
 - **Project PDF:** one "Project statement" for the whole project: page 1 lists every quote with its bills, payment status and one grand total (received and balance when paid); then the breakdown of every bill grouped by quote. Shows all quote numbers and today's date; lead quote's terms, signature and bank details.

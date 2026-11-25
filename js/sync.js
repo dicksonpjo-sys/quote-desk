@@ -181,8 +181,29 @@ const Drive = (() => {
     return { c, primary, strays, source };
   }
 
+  /* Studio Console receipts (v1.7.0): read-only, found by name (the studio account's copy first),
+     downloaded only when it changed, kept in store.meta (per device, never uploaded) for offline use. */
+  async function readReceipts(meta) {
+    try {
+      const files = await list(`name='${SC_FILE}' and trashed=false`);
+      const f = files.find(x => owner() && ownerOf(x) === owner()) || files[0];
+      if (!f) { if (meta.scFile) { delete meta.scFile; delete meta.scReceipts; } return; }
+      if (meta.scFile?.id === f.id && meta.scFile?.modifiedTime === f.modifiedTime && meta.scReceipts) return;
+      const data = await json(`${API}/files/${f.id}?alt=media&supportsAllDrives=true`);
+      if (!Array.isArray(data?.receipts)) throw new Error('not a receipts file');
+      meta.scReceipts = data; meta.scFile = { id: f.id, modifiedTime: f.modifiedTime, owner: ownerOf(f) };
+    } catch (e) { console.warn('Studio Console receipts', e); }
+  }
   /* Pull remote, merge, push merged. Returns merged store. */
   async function sync(store) {
+    store.meta = store.meta || {};
+    await readReceipts(store.meta); // first, so the Studio Console summary written below has the latest payments
+    setReceipts(store.meta.scReceipts, store.projects);
+    const merged = await syncData(store);
+    setReceipts(merged.meta.scReceipts, merged.projects);
+    return merged;
+  }
+  async function syncData(store) {
     const me = await whoAmI();
     const { c, primary, strays, source } = await locate(me);
     let merged = store;
@@ -213,6 +234,7 @@ const Drive = (() => {
       } catch (e) { console.warn('stray merge', e); }
     }
     merged.meta = { ...(store.meta || {}) };
+    setReceipts(merged.meta.scReceipts, merged.projects); // the Studio Console file is built with the latest receipts
     const blob = new Blob([JSON.stringify({ ...merged, meta: undefined, savedAt: nowISO(), savedBy: me.email, app: APP_VERSION })], { type: 'application/json' });
     const res = primary ? await overwrite(primary.id, blob, 'application/json') : await uploadNew(DATA_FILE, c.root, blob, 'application/json');
     c.data = res.id; saveCache(me.email, c);

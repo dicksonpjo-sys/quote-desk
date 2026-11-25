@@ -6,11 +6,12 @@ must not break, and how to test and ship a change.
 - **Owner:** Dickson P Jo (VishwaaFX, Kochi). Talks in short messages; wants to see what you are
   doing as you do it, and to approve anything that changes live data or goes live.
 - **Live app:** https://dicksonpjo-sys.github.io/quote-desk/ (GitHub Pages, `main` branch, root folder)
-- **Current version:** v1.6.0 (`APP_VERSION` in `js/data.js`)
+- **Current version:** v1.7.0 (`APP_VERSION` in `js/data.js`)
 - **Accounts:** studio data owner **vishwaafxacc@gmail.com**; extra users **vishwaafx@gmail.com** and
   **dicksonpjo@gmail.com** (both Editor). Dickson dictates by voice, so emails can arrive misspelt
   ("visualfx", "dixonpjo"); these three are the real ones.
-- **Studio Console file format:** `docs/STUDIO_CONSOLE_INDEX.md`
+- **Studio Console file format:** `docs/STUDIO_CONSOLE_INDEX.md` (Quote Desk → Studio Console) and
+  `docs/STUDIO_CONSOLE_RECEIPTS.md` (Studio Console → Quote Desk, client payments, v1.7.0)
 - **User guide:** `docs/FEATURES.md` · **Hosting and Google setup:** `SETUP.md` · **History:** `docs/CHANGELOG.md`
 
 ## What it is
@@ -88,6 +89,12 @@ Line    = { id, desc, type: 'rate'|'lump', sec, rate, amount, date }   // date u
   creates it; Editors overwrite it (ownership stays with the owner); view/noaccess never write it.
   Never put bank details in it. Changing its fields = update `docs/STUDIO_CONSOLE_INDEX.md` and tell Dickson
   (Studio Console reads it).
+- **Studio Console receipts (v1.7.0):** `studio_console_receipts.json` is written by Studio Console in its own
+  folder and only READ here (`readReceipts` in `js/sync.js`, before the data sync so the index has them).
+  Kept in `store.meta.scReceipts` (per device, never uploaded); applied as an overlay by `setReceipts` /
+  `payOf(p, sec)` / `projectReceived(p)` in `js/data.js`. A bill with receipts takes Studio Console's
+  figures; one without keeps `sec.pay`; receipts without a known bill are unassigned (`looseReceipts`).
+  Always read payments through `payOf` / `projectReceived`, never `sec.pay` directly.
 - **Revisions:** `p.revisions[]` = `{rev, savedAt, total, data}` snapshots; section, line and note ids
   stay the same across versions, which is how Compare matches them. Do not regenerate those ids.
 - **Merge, never overwrite blindly:** `mergeStores` keeps the newest `updatedAt` per project and per
@@ -184,5 +191,6 @@ Run it after any change to `js/sync.js`, `mergeStores` or restore.
   prompt: `docs/STUDIO_CONSOLE_PROMPT_v1.5.md` (Approved / In Progress by default, groups, headings).
 - **v1.6.0 — Project page + project PDF + Studio Console look** (25 Nov 2026). Route `group` (VIEWS.group),
   `QuotePDF.buildProject`; no change to the Studio Console file.
+- **v1.7.0 — Payments from Studio Console** (25 Nov 2026). Prompt: `docs/STUDIO_CONSOLE_PROMPT_v1.7.md`.
 - **Later ideas:** Malayalam in PDFs (embedded Unicode font), VFX Edit Tool Kit CSV import, private repo
   (needs GitHub Pro to keep Pages).

@@ -306,7 +306,7 @@ VIEWS.group = () => {
   if (qs.length < 2) { route = { name: 'home', kind: ui.kind }; return VIEWS.home(); }
   const name = groupName(store, gid);
   const total = qs.reduce((a, p) => a + projectValue(p), 0), rec = qs.reduce((a, p) => a + projectReceived(p), 0), due = qs.reduce((a, p) => a + projectPending(p), 0);
-  const bill = (p, sec, i) => `<details class="bill"><summary><span class="nm">${esc(secTitle(p, i))}</span>${statusPill(sec.pay?.status || 'Pending')}<b class="money">${rs(secNet(sec))}</b></summary>
+  const bill = (p, sec, i) => `<details class="bill"><summary><span class="nm">${esc(secTitle(p, i))}</span>${statusPill(payOf(p, sec).status)}<b class="money">${rs(secNet(sec))}</b></summary>
       <table class="vt"><thead><tr><th>Description</th><th class="r">Sec × Rate</th><th class="r">Amount</th></tr></thead><tbody>
       ${sec.lines.map(l => `<tr><td>${esc(l.desc || '—')}</td><td class="r">${l.type === 'lump' ? '' : `${inr(num(l.sec))} × ${inr(num(l.rate))}`}</td><td class="r">${rs(lineAmount(l))}</td></tr>`).join('')}</tbody></table>
       ${secDiscount(sec) ? `<div class="totrow"><span class="muted">Discount</span><span class="money">− ${rs(secDiscount(sec))}</span></div>` : ''}
@@ -574,10 +574,16 @@ function secCard(p, sec, i) {
 TABS.pay = p => {
   const tiers = p.mode === 'tiers';
   const secs = tiers ? p.sections.filter(s => s.id === p.selectedTier) : p.sections;
+  const rlist = l => `<div class="rlist">${l.map(r => `<div class="totrow"><span>${fmtDate(r.date) || '—'}${r.ref ? ' · ' + esc(r.ref) : ''}${r.note ? ' · ' + esc(r.note) : ''}</span><span class="money">${rs(r.amount)}</span></div>`).join('')}</div>`;
   const rows = secs.map(sec => {
-    const i = p.sections.indexOf(sec);
-    return `<div class="pay">
-      <div class="t"><span>${kindOf(p) === 'supervision' ? 'This bill' : esc(secTitle(p, i))}</span><span class="money">${rs(secNet(sec))}</span></div>
+    const i = p.sections.indexOf(sec); const pay = payOf(p, sec);
+    const head = `<div class="t"><span>${kindOf(p) === 'supervision' ? 'This bill' : esc(secTitle(p, i))}</span><span class="money">${rs(secNet(sec))}</span></div>`;
+    // Studio Console has receipts for this bill: its figures win (v1.7.0)
+    if (pay.source === 'console') return `<div class="pay">${head}
+      <div class="row" style="gap:8px">${statusPill(pay.status)}<span class="money">${rs(pay.received)} received</span>${pay.status === 'Partial' ? `<span class="muted">· ${rs(Math.max(0, secNet(sec) - pay.received))} due</span>` : ''}</div>
+      ${rlist(pay.receipts)}
+      <div class="muted sc-note">From Studio Console · change payments there</div></div>`;
+    return `<div class="pay">${head}
       <div class="seg small">${PAY_STATUSES.map(st => `<button class="${sec.pay.status === st ? 'on' : ''}" data-act="paystat" data-s="${sec.id}" data-v="${st}">${st}</button>`).join('')}</div>
       ${sec.pay.status !== 'Pending' ? `<div class="${sec.pay.status === 'Partial' ? 'grid2' : 'stack'}">
         ${sec.pay.status === 'Partial' ? `<label class="f">Received ₹<input type="text" inputmode="decimal" id="pr_${sec.id}" data-bind="pay:${sec.id}:received" value="${esc(sec.pay.received)}"></label>` : ''}
@@ -591,6 +597,9 @@ TABS.pay = p => {
   <section class="card">
     ${tiers && !p.selectedTier ? `<div class="empty"><b>No option chosen yet</b>On the Quote tab, tick “Client approved this option” to track its payments.</div>` : rows}
   </section>
+  ${looseReceipts(p).length ? `<section class="card stack"><h2>Unassigned receipts</h2>
+    <div class="muted" style="font-size:12.5px">Recorded in Studio Console for this quote but not linked to a bill. Counted in Received; link them to a bill in Studio Console.</div>
+    ${rlist(looseReceipts(p))}</section>` : ''}
   ${!tiers && kindOf(p) !== 'supervision' ? `<section class="card"><label class="check"><input type="checkbox" id="pdf_pay" data-bind="pdf:showPayment" ${p.pdf.showPayment ? 'checked' : ''}> Show the payment status column on the PDF</label></section>` : ''}`;
 };
 
@@ -724,7 +733,10 @@ function driveCard() {
       <div class="row"><select id="sharerole" aria-label="Access" class="grow"><option value="writer">Editor</option><option value="reader">View only</option></select>
         <button class="btn primary" data-act="share">Add</button></div>
       <div class="infobox" style="font-size:12.5px">A new account must first be added as a test user in Google Cloud (Google Auth Platform → Audience → Test users), or Google will not let it sign in.</div></div>` : '';
-  return `${box}
+  const scLine = store.meta.scFile
+    ? `<div class="muted" style="font-size:12.5px">Payments from Studio Console: ${SC.count} receipts${SC.at ? ', updated ' + new Date(SC.at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : ''}. Bills with receipts there show Studio Console's figures.</div>`
+    : `<div class="muted" style="font-size:12.5px">Payments from Studio Console: no receipts file found yet. Payments marked here are used.</div>`;
+  return `${box}${scLine}
     <div class="row"><button class="btn primary" data-act="syncnow">Sync now</button><button class="btn" data-act="reauth">${Drive.needsUpgrade() ? 'Reconnect (needed)' : 'Switch account / Reconnect'}</button><button class="btn danger" data-act="disconnect">Sign out</button></div>
     ${share}`;
 }
@@ -1362,6 +1374,7 @@ function boot() {
   applyTheme();
   const msg = Drive.handleRedirect();
   store = loadStore();
+  if (store) setReceipts(store.meta?.scReceipts, store.projects); // payments from Studio Console, also offline
   if (!store) { store = emptyStore(); saveLocal(store); }
   try { const r = JSON.parse(sessionStorage.getItem('vfxq.route') || 'null'); if (r && VIEWS[r.name]) { route = r; if (r.kind) ui.kind = r.kind; } } catch {}
   try { history.replaceState(route, ''); } catch {}

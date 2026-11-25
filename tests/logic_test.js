@@ -5,7 +5,7 @@ const fs = require('fs'), path = require('path'), vm = require('vm');
 const ctx = { console, localStorage: { getItem: () => null, setItem: () => {} } };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'data.js'), 'utf8') +
-  '\n;this.api = { inr, fyOf, addDays, billLetter, secLabel, secTitle, createProject, nextSeq, quoteNo, secGross, secNet, secDiscount, secDuration, sameDurWarning, projectValue, projectReceived, projectPending, mergeStores, emptyStore, newLine, newSection, validTill, mmss, normalizeStore, dashboardItems, groupName, SORTS, buildIndex, diffVersions, versionsOf, revName, clone };', ctx);
+  '\n;this.api = { inr, fyOf, addDays, billLetter, secLabel, secTitle, createProject, nextSeq, quoteNo, secGross, secNet, secDiscount, secDuration, sameDurWarning, projectValue, projectReceived, projectPending, mergeStores, emptyStore, newLine, newSection, validTill, mmss, setReceipts, payOf, looseReceipts, normalizeStore, dashboardItems, groupName, SORTS, buildIndex, diffVersions, versionsOf, revName, clone };', ctx);
 const A = ctx.api;
 let pass = 0, fail = 0;
 function eq(name, got, want) {
@@ -213,6 +213,38 @@ eq('offline duplicate: later renumbered', [byId.c2.seq, byId.c2.renumbered], [6,
   eq('index: a lone quote has no group', ix.find(q => q.project === 'Other film').groupId, null);
   b.deleted = true;
   eq('groups: a group with one live quote shows as a single quote', A.dashboardItems(st, () => true).every(i => !i.group), true);
+}
+
+// ---- v1.7.0: payments from Studio Console ----
+{
+  const st = A.emptyStore();
+  const p = A.createProject(st, { name: 'Mayan (Additional)', category: 'Feature Film', client: 'Magic Moon', templateId: 'tpl_film', date: '2026-11-23' });
+  p.status = 'Approved';
+  p.sections = [A.newSection('D'), A.newSection('E'), A.newSection('F')];
+  p.sections[0].lines = [A.newLine('Comp', 'lump', '', '', '46860')];
+  p.sections[1].lines = [A.newLine('Clean', 'lump', '', '', '38430')];
+  p.sections[2].lines = [A.newLine('Retouch', 'lump', '', '', '15000')];
+  p.sections[2].pay = { status: 'Paid', received: '', date: '2026-11-01' }; // marked in Quote Desk earlier
+  st.projects.push(p);
+  const [d, e, f] = p.sections;
+  A.setReceipts({ generatedAt: '2026-11-25T10:00:00Z', receipts: [
+    { id: 'r1', quoteId: p.id, billId: d.id, amount: 20000, date: '2026-11-20', ref: 'NEFT 1' },
+    { id: 'r2', quoteId: p.id, billId: d.id, amount: 26860, date: '2026-11-24', ref: 'NEFT 2' },
+    { id: 'r3', quoteId: p.id, billId: e.id, amount: 10000, date: '2026-11-25' },
+    { id: 'r4', quoteId: p.id, billId: null, amount: 5000, date: '2026-11-25', ref: 'cash' },
+    { id: 'r5', quoteId: p.id, billId: 'sec_gone', amount: 1000, date: '2026-11-25' },
+    { id: 'r6', quoteId: p.id, billId: e.id, amount: 999, deleted: true },
+    { id: 'r7', quoteId: p.id, billId: e.id, amount: 0 } ] }, st.projects);
+  eq('receipts: two receipts covering a bill = Paid, latest date', [A.payOf(p, d).status, A.payOf(p, d).received, A.payOf(p, d).date, A.payOf(p, d).source], ['Paid', 46860, '2026-11-24', 'console']);
+  eq('receipts: less than the bill = Partial', [A.payOf(p, e).status, A.payOf(p, e).received], ['Partial', 10000]);
+  eq('receipts: a bill with none keeps the Quote Desk mark', [A.payOf(p, f).status, A.payOf(p, f).received, A.payOf(p, f).source], ['Paid', 15000, 'desk']);
+  eq('receipts: no bill or an unknown bill = unassigned', A.looseReceipts(p).map(r => r.amount), [5000, 1000]);
+  eq('receipts: deleted and zero receipts ignored', A.payOf(p, e).receipts.length, 1);
+  eq('receipts: quote received = bills + unassigned', A.projectReceived(p), 46860 + 10000 + 15000 + 6000);
+  const q = A.buildIndex(st).quotes[0];
+  eq('receipts: Studio Console file shows the same payments', [q.bills.map(b => b.payment.status), q.received], [['Paid', 'Partial', 'Paid'], 77860]);
+  A.setReceipts(null, st.projects);
+  eq('receipts: no file = Quote Desk marks only', [A.payOf(p, d).status, A.projectReceived(p)], ['Pending', 15000]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -1,7 +1,7 @@
 /* VishwaaFX Quote Desk — data model, defaults, calculations */
 'use strict';
 
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 const STORE_KEY = 'vfxq.data.v2';
 
 const uid = (p = 'id') => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -285,17 +285,47 @@ function projectValue(p) {
   }
   return p.sections.reduce((a, s) => a + secNet(s), 0);
 }
-function secReceived(sec) {
-  if (sec.pay.status === 'Paid') return secNet(sec);
-  if (sec.pay.status === 'Partial') return num(sec.pay.received);
-  return 0;
+/* ---------------- Payments from Studio Console (v1.7.0) ----------------
+   Studio Console records client receipts and publishes them read-only as studio_console_receipts.json.
+   A bill that has receipts there takes Studio Console's figures (Dickson: "both, Studio Console wins");
+   a bill with none keeps what was marked in Quote Desk. Receipts for a quote but no (known) bill are
+   "unassigned": counted in the quote's received total, shown apart. Never stored in the quote data. */
+const SC_FILE = 'studio_console_receipts.json';
+const SC = { byBill: new Map(), loose: new Map(), at: null, count: 0 };
+function setReceipts(data, projects = []) {
+  SC.byBill = new Map(); SC.loose = new Map(); SC.at = data?.generatedAt || null; SC.count = 0;
+  const bills = new Map(); // quoteId -> Set(billId)
+  for (const p of projects) bills.set(p.id, new Set((p.sections || []).map(x => x.id)));
+  for (const r of (data?.receipts || [])) {
+    if (!r || r.deleted || !r.quoteId || !(num(r.amount) > 0)) continue;
+    const rec = { id: r.id || '', amount: num(r.amount), date: r.date || '', ref: r.ref || '', note: r.note || '' };
+    const known = r.billId && bills.get(r.quoteId)?.has(r.billId);
+    const map = known ? SC.byBill : SC.loose, key = known ? r.quoteId + '|' + r.billId : r.quoteId;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(rec); SC.count++;
+  }
+  for (const m of [SC.byBill, SC.loose]) for (const l of m.values()) l.sort((x, y) => String(x.date).localeCompare(String(y.date)));
 }
+const sumAmt = l => l.reduce((a, r) => a + r.amount, 0);
+/* The payment a bill shows everywhere: {status, received, date, source: 'console'|'desk', receipts} */
+function payOf(p, sec) {
+  const r = p ? SC.byBill.get(p.id + '|' + sec.id) : null;
+  if (r && r.length) {
+    const got = sumAmt(r), net = secNet(sec);
+    return { status: got >= net ? 'Paid' : 'Partial', received: got, date: r[r.length - 1].date, source: 'console', receipts: r };
+  }
+  const st = sec.pay?.status || 'Pending';
+  return { status: st, received: st === 'Paid' ? secNet(sec) : st === 'Partial' ? num(sec.pay.received) : 0, date: sec.pay?.date || '', source: 'desk', receipts: [] };
+}
+function looseReceipts(p) { return SC.loose.get(p.id) || []; }
+function secReceived(sec, p) { return payOf(p, sec).received; }
 function projectReceived(p) {
+  const loose = sumAmt(looseReceipts(p));
   if (p.mode === 'tiers') {
     const t = p.sections.find(s => s.id === p.selectedTier);
-    return t ? secReceived(t) : 0;
+    return (t ? secReceived(t, p) : 0) + loose;
   }
-  return p.sections.reduce((a, s) => a + secReceived(s), 0);
+  return p.sections.reduce((a, s) => a + secReceived(s, p), 0) + loose;
 }
 const isCommitted = p => (kindOf(p) === 'supervision' ? ['Sent', 'Approved', 'In Progress', 'Closed'] : ['Approved', 'In Progress', 'Closed']).includes(p.status);
 function bankOf(store, p) {
@@ -412,7 +442,7 @@ function indexBill(p, sec, i) {
     id: sec.id, label: sup ? 'Bill' : secLabel(p, i), heading: sup ? 'Bill' : secTitle(p, i), title: (sec.name || '').trim(),
     gross: secGross(sec), discount: secDiscount(sec), amount: secNet(sec),
     screenTimeSec: sup ? null : secDuration(sec),
-    payment: { status: sec.pay?.status || 'Pending', received: secReceived(sec), date: sec.pay?.date || null }
+    payment: (pay => ({ status: pay.status, received: pay.received, date: pay.date || null, source: pay.source }))(payOf(p, sec))
   };
 }
 function buildIndex(store) {
@@ -422,7 +452,7 @@ function buildIndex(store) {
     const chosen = tiers ? p.sections.findIndex(s => s.id === p.selectedTier) : -1;
     const bills = tiers ? (chosen >= 0 ? [indexBill(p, p.sections[chosen], chosen)] : []) : p.sections.map((s, i) => indexBill(p, s, i));
     const total = tiers ? (chosen >= 0 ? secNet(p.sections[chosen]) : null) : projectValue(p);
-    const received = bills.reduce((a, b) => a + b.payment.received, 0);
+    const received = bills.reduce((a, b) => a + b.payment.received, 0) + sumAmt(looseReceipts(p));
     return {
       id: p.id, quoteNo: quoteNo(store, p), kind: kindOf(p), rev: p.rev || 0,
       studioProjectId: (p.studioId || '').trim() || null,
