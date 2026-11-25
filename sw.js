@@ -1,5 +1,5 @@
 /* Offline cache for the app shell. Drive API calls are never cached. */
-const CACHE = 'quote-desk-v1.7.0';
+const CACHE = 'quote-desk-v1.7.1';
 const SHELL = ['./', 'index.html', 'css/app.css', 'manifest.webmanifest', 'logo.png',
   'js/config.js', 'js/data.js', 'js/sync.js', 'js/pdf.js', 'js/app.js',
   'vendor/pdf-lib.min.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs',
@@ -16,5 +16,10 @@ self.addEventListener('fetch', e => {
     e.respondWith(fetch(e.request).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put('index.html', copy)); return r; }).catch(() => caches.match('index.html')));
     return;
   }
-  e.respondWith(caches.match(e.request, { ignoreSearch: true }).then(hit => hit || fetch(e.request)));
+  // Files carry ?v=<version>: an exact match is the current version; a new version is not cached yet,
+  // so it comes from the network straight away (v1.7.1). Offline, any cached copy is better than none.
+  e.respondWith(caches.match(e.request).then(hit => hit || fetch(e.request).then(r => {
+    if (r.ok) { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); }
+    return r;
+  }).catch(() => caches.match(e.request, { ignoreSearch: true }))));
 });
