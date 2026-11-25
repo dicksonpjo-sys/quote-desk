@@ -1,7 +1,7 @@
 /* VishwaaFX Quote Desk — data model, defaults, calculations */
 'use strict';
 
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.5.0';
 const STORE_KEY = 'vfxq.data.v2';
 
 const uid = (p = 'id') => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -185,11 +185,26 @@ function secLabel(p, i) {
   if (p.mode === 'tiers') return p.sections[i]?.name || `Option ${i + 1}`;
   return i === 0 ? 'Initial Bill' : 'Additional Bill ' + billLetter(i - 1);
 }
+/* The bill heading (v1.5.0): exactly what the user typed, used in the app, on the PDF summary line and
+   as the breakdown heading. The position label (Initial Bill, Additional Bill A…) is only the fallback
+   when the heading is empty. */
 function secTitle(p, i) {
-  const sec = p.sections[i]; const lbl = secLabel(p, i);
-  if (p.mode === 'tiers') return lbl;
-  return sec.name && sec.name.trim() ? `${lbl} – ${sec.name.trim()}` : lbl;
+  const sec = p.sections[i];
+  return (sec?.name || '').trim() || secLabel(p, i);
 }
+/* Until v1.4.x a bill could have a separate "line on the quotation page" (summaryDesc). Dickson's
+   choice (25 Nov 2026): that line becomes the bill heading. Same input → same output on every phone,
+   so it needs no timestamp and cannot fight in a merge. */
+function normalizeProject(p) {
+  const fix = secs => (secs || []).forEach(sec => {
+    const d = String(sec.summaryDesc || '').trim();
+    if (d) { sec.name = d; sec.summaryDesc = ''; }
+  });
+  fix(p.sections);
+  (p.revisions || []).forEach(r => fix(r.data?.sections));
+  return p;
+}
+function normalizeStore(s) { (s?.projects || []).forEach(normalizeProject); return s; }
 const kindOf = p => p.kind || 'quote';
 function newSection(name = '') {
   return {
@@ -323,7 +338,7 @@ function loadStore() {
       const s = JSON.parse(raw);
       s.settings = { ...defaultSettings(), ...s.settings };
       s.projects = s.projects || []; s.meta = s.meta || {};
-      return s;
+      return normalizeStore(s);
     }
   } catch (e) { console.warn('load failed', e); }
   return null;
@@ -342,7 +357,7 @@ function mergeStores(a, b) {
     const cur = map.get(p.id);
     if (!cur || new Date(p.updatedAt) > new Date(cur.updatedAt)) map.set(p.id, p);
   }
-  out.projects = [...map.values()];
+  out.projects = [...map.values()].map(normalizeProject);
   // Two devices offline could hand out the same number: renumber the later one.
   const seen = new Map();
   for (const p of [...out.projects].filter(p => !p.deleted).sort((x, y) => new Date(x.createdAt) - new Date(y.createdAt))) {
@@ -353,6 +368,40 @@ function mergeStores(a, b) {
   return out;
 }
 
+/* ---------------- Project groups (v1.5.0) ----------------
+   Quotes for the same film (e.g. Mayan's first quote and its later additional quotes) can be grouped.
+   Each keeps its own number, PDF and payments; p.groupId = the id of the quote the group started from. */
+function groupMembers(store, gid) { return gid ? store.projects.filter(p => !p.deleted && p.groupId === gid) : []; }
+function groupName(store, gid) {
+  const m = groupMembers(store, gid);
+  const lead = m.find(p => p.id === gid) || m.slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))[0];
+  return lead ? lead.name : '';
+}
+/* Dashboard sort orders (v1.5.0). Each compares two quotes; the first in the list shows first. */
+const SORTS = {
+  updated: ['Latest updated', (a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))],
+  number: ['Quote no.', (a, b) => String(b.fy).localeCompare(String(a.fy)) || b.seq - a.seq || b.rev - a.rev],
+  date: ['Quote date', (a, b) => String(b.date).localeCompare(String(a.date)) || String(b.updatedAt).localeCompare(String(a.updatedAt))],
+  amount: ['Amount', (a, b) => projectValue(b) - projectValue(a)],
+  client: ['Client', (a, b) => String(a.client || '~').localeCompare(String(b.client || '~')) || String(a.name).localeCompare(String(b.name))],
+  status: ['Status', (a, b) => STATUSES.indexOf(a.status) - STATUSES.indexOf(b.status) || String(b.updatedAt).localeCompare(String(a.updatedAt))]
+};
+/* The dashboard list: single quotes and project groups, in the chosen order. A group shows when any of
+   its quotes matches the filters, sorted by its quote that would come first. */
+function dashboardItems(store, match, sortKey = 'updated') {
+  const cmp = (SORTS[sortKey] || SORTS.updated)[1];
+  const items = [], seen = new Set();
+  for (const p of store.projects.filter(x => !x.deleted && match(x))) {
+    if (!p.groupId || groupMembers(store, p.groupId).length < 2) { items.push({ lead: p, quotes: [p] }); continue; }
+    if (seen.has(p.groupId)) continue;
+    seen.add(p.groupId);
+    const quotes = groupMembers(store, p.groupId).sort(cmp);
+    const lead = quotes.filter(match).sort(cmp)[0];
+    items.push({ group: p.groupId, name: groupName(store, p.groupId), lead, quotes });
+  }
+  return items.sort((x, y) => cmp(x.lead, y.lead));
+}
+
 /* ---------------- Studio Console summary (v1.4.0) ----------------
    quote_desk_index.json, next to the data file. Read by Studio Console; built from the live quote
    data on every sync, so it is current even when no PDF was saved. Never holds bank details. */
@@ -360,7 +409,7 @@ const INDEX_FILE = 'quote_desk_index.json';
 function indexBill(p, sec, i) {
   const sup = kindOf(p) === 'supervision';
   return {
-    id: sec.id, label: sup ? 'Bill' : secLabel(p, i), title: (sec.name || '').trim(),
+    id: sec.id, label: sup ? 'Bill' : secLabel(p, i), heading: sup ? 'Bill' : secTitle(p, i), title: (sec.name || '').trim(),
     gross: secGross(sec), discount: secDiscount(sec), amount: secNet(sec),
     screenTimeSec: sup ? null : secDuration(sec),
     payment: { status: sec.pay?.status || 'Pending', received: secReceived(sec), date: sec.pay?.date || null }
@@ -377,6 +426,8 @@ function buildIndex(store) {
     return {
       id: p.id, quoteNo: quoteNo(store, p), kind: kindOf(p), rev: p.rev || 0,
       studioProjectId: (p.studioId || '').trim() || null,
+      groupId: p.groupId && groupMembers(store, p.groupId).length > 1 ? p.groupId : null,
+      groupName: p.groupId && groupMembers(store, p.groupId).length > 1 ? groupName(store, p.groupId) : null,
       project: p.name, client: p.client || '', clientLabel: p.clientLabel || 'Production', category: sup ? null : p.category,
       status: p.status, createdAt: p.createdAt, quoteDate: p.date, validTill: sup ? null : validTill(p),
       layout: sup ? 'supervision' : tiers ? 'options' : 'bills', optionApproved: tiers ? chosen >= 0 : null,

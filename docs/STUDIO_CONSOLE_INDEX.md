@@ -1,4 +1,4 @@
-# quote_desk_index.json — format for Studio Console (v1.4.1)
+# quote_desk_index.json — format for Studio Console (v1.5.0)
 
 Where: `My Drive/VishwaaFX Quotes/quote_desk_index.json` in **vishwaafxacc@gmail.com**, next to
 `vishwaafx_quotes_data.json`. Studio Console only **reads** it.
@@ -20,6 +20,8 @@ Where: `My Drive/VishwaaFX Quotes/quote_desk_index.json` in **vishwaafxacc@gmail
     "kind": "quote",                   // "quote" | "supervision"
     "rev": 1,
     "studioProjectId": "STU-042",      // typed on the quote (Details → Studio project ID), or null
+    "groupId": "prj_…",                // v1.5.0: quotes of one project grouped in Quote Desk share this; null if not grouped
+    "groupName": "Mayan",              // v1.5.0: the group's name (its first quote's name), or null
     "project": "Law and Order", "client": "Satyam Cinemas …", "clientLabel": "Production",
     "category": "Feature Film",        // null for supervision bills
     "status": "In Progress",           // Draft | Sent | Approved | In Progress | Closed | Lost
@@ -31,8 +33,9 @@ Where: `My Drive/VishwaaFX Quotes/quote_desk_index.json` in **vishwaafxacc@gmail
     "committed": true,                 // counts as business (Approved / In Progress / Closed; supervision from Sent)
     "bills": [{
       "id": "sec_…",                   // stable bill id: never changes when bills are added, removed or reordered
-      "label": "Initial Bill",         // then "Additional Bill A", "B"…; options: the option name; supervision: "Bill"
-      "title": "",                     // optional title typed after the label, e.g. "Trailer & Teaser"
+      "label": "Initial Bill",         // position only: then "Additional Bill A", "B"…; options: the option name; supervision: "Bill"
+      "heading": "Additional Bill D After 10-11-28",  // v1.5.0: the bill heading exactly as printed on the PDF (label when none typed)
+      "title": "",                     // the heading as typed ("" when none): show `heading` instead
       "gross": 900000, "discount": 0, "amount": 900000,
       "screenTimeSec": 955,            // null for supervision
       "payment": { "status": "Paid", "received": 900000, "date": "2026-10-02" }  // Pending | Partial | Paid

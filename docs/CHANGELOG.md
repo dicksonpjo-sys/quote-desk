@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.5.0 — 25 Nov 2026
+- **One heading per bill, fully yours.** Each bill has one heading box; exactly that text is used in the app, on the PDF's page 1 and as the breakdown heading. "Initial Bill / Additional Bill A" is only the grey hint when the box is empty, never forced onto the PDF. Bills that had a separate "line on the quotation page" now use that line as their heading (Dickson's choice). The optional note under the heading stays.
+- **Project groups.** Quote menu ⋯ → "Group with another quote": quotes of the same film (e.g. Mayan and Mayan (Additional)) show as one project card on the dashboard with every quote listed and a combined total, received and due. Each quote keeps its own number, PDF and payments. Quote Details shows the other quotes of the project.
+- **Sort** the dashboard: latest updated (default), quote no., quote date, amount, client or status.
+- **Compact screens:** tighter spacing on the dashboard, quote screen, bills and settings, so more fits on one screen.
+- Studio Console file: each quote carries `groupId` / `groupName`; each bill carries `heading` (as printed on the PDF).
+
 ## v1.4.1 — 23 Nov 2026
 - Studio Console index: each bill carries its id.
 

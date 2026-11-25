@@ -5,7 +5,7 @@ const fs = require('fs'), path = require('path'), vm = require('vm');
 const ctx = { console, localStorage: { getItem: () => null, setItem: () => {} } };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'data.js'), 'utf8') +
-  '\n;this.api = { inr, fyOf, addDays, billLetter, secLabel, secTitle, createProject, nextSeq, quoteNo, secGross, secNet, secDiscount, secDuration, sameDurWarning, projectValue, projectReceived, projectPending, mergeStores, emptyStore, newLine, newSection, validTill, mmss, buildIndex, diffVersions, versionsOf, revName, clone };', ctx);
+  '\n;this.api = { inr, fyOf, addDays, billLetter, secLabel, secTitle, createProject, nextSeq, quoteNo, secGross, secNet, secDiscount, secDuration, sameDurWarning, projectValue, projectReceived, projectPending, mergeStores, emptyStore, newLine, newSection, validTill, mmss, normalizeStore, dashboardItems, groupName, SORTS, buildIndex, diffVersions, versionsOf, revName, clone };', ctx);
 const A = ctx.api;
 let pass = 0, fail = 0;
 function eq(name, got, want) {
@@ -30,7 +30,8 @@ eq('valid till', A.validTill({ date: '2026-09-05', validDays: 30 }), '2026-10-05
 // Bill labels
 const pb = { mode: 'batches', sections: [{ name: '' }, { name: 'Trailer & Teaser' }, {}] };
 eq('label initial', A.secLabel(pb, 0), 'Initial Bill');
-eq('label A with title', A.secTitle(pb, 1), 'Additional Bill A – Trailer & Teaser');
+eq('heading = what was typed (v1.5.0)', A.secTitle(pb, 1), 'Trailer & Teaser');
+eq('heading falls back to the position label', A.secTitle(pb, 2), 'Additional Bill B');
 eq('label B', A.secLabel(pb, 2), 'Additional Bill B');
 eq('bill letter 26 -> AA', A.billLetter(26), 'AA');
 
@@ -148,7 +149,7 @@ eq('offline duplicate: later renumbered', [byId.c2.seq, byId.c2.renumbered], [6,
   const b0 = d.bills.find(b => b.label === 'Initial Bill');
   eq('compare: line changed / removed / added', b0.lines.map(l => [l.desc, l.change]), [['Roto', 'changed'], ['Paint', 'removed'], ['Sky', 'added']]);
   eq('compare: changed line values', [b0.lines[0].from.sec, b0.lines[0].to.sec, b0.lines[0].to.amount], [10, 15, 15000]);
-  eq('compare: new bill', d.bills.filter(b => b.change === 'added').map(b => [b.label, b.netTo]), [['Additional Bill A – Extra', 6000]]);
+  eq('compare: new bill', d.bills.filter(b => b.change === 'added').map(b => [b.label, b.netTo]), [['Extra', 6000]]);
   eq('compare: notes', d.notes.map(n => [n.title, n.added]), [['Payment terms', ['Balance on delivery']]]);
   const same = A.diffVersions(vs[1].p, vs[1].p);
   eq('compare: same version = no differences', [same.fields.length, same.bills.length, same.notes.length], [0, 0, 0]);
@@ -171,6 +172,47 @@ eq('offline duplicate: later renumbered', [byId.c2.seq, byId.c2.renumbered], [6,
   const moved = after.find(b => b.id === thirdId);
   eq('index ids: after deleting the second bill, the third keeps its id and becomes Additional Bill A', [after[1].id === thirdId, moved && moved.label], [true, 'Additional Bill A']);
   eq('index ids: schema stays 1', ix.schema, 1);
+}
+
+// ---- v1.5.0: one bill heading, page-1 lines converted ----
+{
+  const st = A.emptyStore();
+  const p = A.createProject(st, { name: 'Mayan (Additional)', category: 'Feature Film', client: 'Magic Moon', templateId: 'tpl_film', date: '2026-11-23' });
+  p.sections = [A.newSection('Additional Bill D After 10-11-28'), A.newSection(''), A.newSection('Additional Bill F - 25-11-26 - DOP'), A.newSection('Kept title')];
+  p.sections[1].summaryDesc = 'Additional Bill E - 23-11-26';
+  p.sections[2].summaryDesc = 'Additional Bill F - 25-11-26';
+  p.revisions = [{ rev: 0, data: { sections: [{ ...A.clone(p.sections[2]) }] } }];
+  st.projects.push(p);
+  A.normalizeStore(st);
+  eq('heading: page-1 line becomes the heading', p.sections.map((s, i) => A.secTitle(p, i)),
+    ['Additional Bill D After 10-11-28', 'Additional Bill E - 23-11-26', 'Additional Bill F - 25-11-26', 'Kept title']);
+  eq('heading: old page-1 line cleared', p.sections.every(s => !s.summaryDesc), true);
+  eq('heading: saved versions converted too', p.revisions[0].data.sections[0].name, 'Additional Bill F - 25-11-26');
+  const again = JSON.stringify(st.projects); A.normalizeStore(st);
+  eq('heading: conversion is stable (same result every time, every phone)', JSON.stringify(st.projects), again);
+  const m = A.mergeStores({ settings: st.settings, projects: [] }, { settings: st.settings, projects: [{ ...A.clone(p), sections: [{ ...A.clone(p.sections[0]), name: 'x', summaryDesc: 'From an old phone' }] }] });
+  eq('heading: a page-1 line arriving from an old phone is converted on merge', m.projects[0].sections[0].name, 'From an old phone');
+  const b = A.buildIndex(st).quotes[0].bills;
+  eq('index: heading = what the PDF prints; label stays the position', [b[1].heading, b[1].label], ['Additional Bill E - 23-11-26', 'Additional Bill A']);
+}
+
+// ---- v1.5.0: project groups and dashboard sort ----
+{
+  const st = A.emptyStore();
+  const mk = (name, date, status, amount) => { const p = A.createProject(st, { name, category: 'Feature Film', client: 'Magic Moon', templateId: 'tpl_film', date }); p.status = status; p.sections = [A.newSection('')]; p.sections[0].lines = [A.newLine('Work', 'lump', '', '', String(amount))]; st.projects.push(p); return p; };
+  const a = mk('Mayan', '2026-10-01', 'In Progress', 1082010), b = mk('Mayan (Additional)', '2026-11-23', 'Approved', 100290), c = mk('Other film', '2026-11-01', 'Draft', 50000);
+  a.updatedAt = '2026-11-01T00:00:00Z'; b.updatedAt = '2026-11-24T00:00:00Z'; c.updatedAt = '2026-11-20T00:00:00Z';
+  a.groupId = a.id; b.groupId = a.id;
+  const items = A.dashboardItems(st, () => true, 'updated');
+  eq('groups: two quotes show as one project, one single quote', items.map(i => i.group ? 'G:' + i.name + ':' + i.quotes.length : i.lead.name), ['G:Mayan:2', 'Other film']);
+  eq('groups: filter on one member still shows the project', A.dashboardItems(st, p => p.status === 'Approved').map(i => i.group ? i.name : i.lead.name), ['Mayan']);
+  eq('sort: amount', A.dashboardItems(st, () => true, 'amount').map(i => i.lead.name), ['Mayan', 'Other film']);
+  eq('sort: client then name keeps every quote', A.dashboardItems(st, () => true, 'client').length, 2);
+  const ix = A.buildIndex(st).quotes;
+  eq('index: grouped quotes carry groupId and groupName', ix.filter(q => q.groupId).map(q => [q.project, q.groupName]).sort(), [['Mayan (Additional)', 'Mayan'], ['Mayan', 'Mayan']]);
+  eq('index: a lone quote has no group', ix.find(q => q.project === 'Other film').groupId, null);
+  b.deleted = true;
+  eq('groups: a group with one live quote shows as a single quote', A.dashboardItems(st, () => true).every(i => !i.group), true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

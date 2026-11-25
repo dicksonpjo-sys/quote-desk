@@ -3,7 +3,7 @@
 
 let store;
 let route = { name: 'start' };
-const ui = { cat: 'All', q: '', status: 'All', tab: 'quote', kind: 'quote' };
+const ui = { cat: 'All', q: '', status: 'All', tab: 'quote', kind: 'quote', sort: (() => { try { return localStorage.getItem('vfxq.sort') || 'updated'; } catch { return 'updated'; } })() };
 const KIND = { quote: { name: 'Project Quotes', one: 'quote', New: 'New quote' }, supervision: { name: 'On-Site Supervision', one: 'bill', New: 'New bill' } };
 let syncState = 'local';
 const $app = () => document.getElementById('app');
@@ -281,6 +281,7 @@ VIEWS.home = () => {
     <div class="search">
       <input type="search" id="q" placeholder="Search name, client or quote no." value="${esc(ui.q)}" data-act-input="search" aria-label="Search">
       <select id="statusf" data-act-change="statusf" aria-label="Status" style="width:auto">${['All', ...STATUSES].map(s => `<option ${ui.status === s ? 'selected' : ''} value="${s}">${s === 'All' ? 'All status' : s}</option>`).join('')}</select>
+      <select id="sortf" data-act-change="sortf" aria-label="Sort" style="width:auto">${Object.entries(SORTS).map(([k, [l]]) => `<option value="${k}" ${ui.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
     <div class="plist" id="plist">${homeList()}</div>`;
   return {
@@ -291,11 +292,28 @@ VIEWS.home = () => {
 };
 
 function homeList() {
-  let list = store.projects.filter(p => !p.deleted && kindOf(p) === ui.kind && (ui.kind === 'supervision' || ui.cat === 'All' || p.category === ui.cat));
-  if (ui.status !== 'All') list = list.filter(p => p.status === ui.status);
-  if (ui.q.trim()) { const q = ui.q.toLowerCase(); list = list.filter(p => (p.name + ' ' + p.client + ' ' + quoteNo(store, p)).toLowerCase().includes(q)); }
-  list.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  return list.length ? list.map(pcard).join('') : `<div class="card empty"><b>${ui.q || ui.status !== 'All' ? 'No matching quotes' : 'No quotes here yet'}</b>${ui.q || ui.status !== 'All' ? 'Try another search or status.' : 'Tap “New quote” to start one.'}</div>`;
+  const q = ui.q.trim().toLowerCase();
+  const match = p => kindOf(p) === ui.kind && (ui.kind === 'supervision' || ui.cat === 'All' || p.category === ui.cat)
+    && (ui.status === 'All' || p.status === ui.status)
+    && (!q || (p.name + ' ' + p.client + ' ' + quoteNo(store, p) + ' ' + (p.groupId ? groupName(store, p.groupId) : '')).toLowerCase().includes(q));
+  const list = dashboardItems(store, match, ui.sort);
+  return list.length ? list.map(it => it.group ? gcard(it) : pcard(it.lead)).join('') : `<div class="card empty"><b>${ui.q || ui.status !== 'All' ? 'No matching quotes' : 'No quotes here yet'}</b>${ui.q || ui.status !== 'All' ? 'Try another search or status.' : 'Tap “New quote” to start one.'}</div>`;
+}
+/* A project group: one card, every quote in it as a row, combined total / received / due (v1.5.0) */
+function gcard(it) {
+  const qs = it.quotes;
+  const total = qs.reduce((a, p) => a + projectValue(p), 0);
+  const committed = qs.filter(isCommitted), cv = committed.reduce((a, p) => a + projectValue(p), 0);
+  const rec = qs.reduce((a, p) => a + projectReceived(p), 0), due = qs.reduce((a, p) => a + projectPending(p), 0);
+  const rows = qs.map(p => `<button class="grow-q" data-act="open" data-id="${p.id}"><span class="qno">${esc(quoteNo(store, p))}</span>
+      <span class="nm">${esc(p.name)}</span>${statusPill(p.status)}<span class="money">${rs(projectValue(p))}</span></button>`).join('');
+  return `<div class="pcard gcard">
+    <div class="top"><span class="eyebrow">Project · ${qs.length} quotes</span><span class="tag">${esc(qs[0].client || '—')}</span></div>
+    <h3>${esc(it.name)}</h3>
+    <div class="glist">${rows}</div>
+    <div class="foot"><div class="val money"><small>Project total</small>${rs(total)}</div>
+      ${cv ? `<div style="min-width:120px"><div class="meter"><i style="width:${Math.min(100, rec / cv * 100)}%"></i></div><div class="paysum">${rs(rec)} in · <b>${rs(due)}</b> due</div></div>` : '<div class="paysum">Nothing approved yet</div>'}</div>
+  </div>`;
 }
 function statusPill(s) { return `<span class="pill ${s.replace(' ', '-')}">${esc(s)}</span>`; }
 function expiryPill(p) {
@@ -365,6 +383,7 @@ document.addEventListener('change', e => {
     render();
   }
   if (el.dataset.actChange === 'statusf') { ui.status = el.value; render(); }
+  if (el.dataset.actChange === 'sortf') { ui.sort = el.value; try { localStorage.setItem('vfxq.sort', el.value); } catch {} render(); }
 });
 
 /* ---------- project ---------- */
@@ -386,6 +405,8 @@ VIEWS.project = () => {
       ${sup ? '' : `<label class="f">Category<select id="p_cat" data-bind="p:category">${s.categories.map(c => `<option ${c === p.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>`}
       <label class="f">${sup ? 'Bill' : 'Quote'} date<input type="date" id="p_date" data-bind="p:date" value="${p.date}"></label>
       ${sup ? '' : `<label class="f">Valid for (days) · till <span data-calc="pvalid"></span><input type="text" inputmode="numeric" id="p_valid" data-bind="p:validDays" data-int value="${p.validDays}"></label>`}
+      ${p.groupId && groupMembers(store, p.groupId).length > 1 ? `<div class="f gline" style="grid-column:1/-1">Project “${esc(groupName(store, p.groupId))}” · ${groupMembers(store, p.groupId).length} quotes
+        <div class="row" style="gap:6px">${groupMembers(store, p.groupId).sort(SORTS.number[1]).map(x => `<button class="chip ${x.id === p.id ? 'on' : ''}" data-act="open" data-id="${x.id}">${esc(quoteNo(store, x))}</button>`).join('')}</div></div>` : ''}
       <label class="f">Studio project ID<input type="text" id="p_studio" data-bind="p:studioId" value="${esc(p.studioId || '')}" placeholder="Optional" autocomplete="off"></label>
     </div>
   </section>
@@ -465,8 +486,8 @@ function secCard(p, sec, i) {
   }).join('');
   const dsel = [['none', 'No discount'], ['final', 'Final amount after discount'], ['amount', 'Discount amount ₹'], ['percent', 'Discount %']];
   return `<section class="sec">
-    <div class="sec-h"><span class="idx">${tiers ? 'OPT ' + (i + 1) : esc(secLabel(p, i).replace('Additional ', '').toUpperCase())}</span>
-      <input type="text" id="sn_${sec.id}" data-bind="sec:${sec.id}:name" value="${esc(sec.name)}" placeholder="${tiers ? 'Option name' : 'Add a title'}" aria-label="${tiers ? 'Option name' : 'Bill title'}">
+    <div class="sec-h"><span class="idx">${i + 1}</span>
+      <input type="text" id="sn_${sec.id}" data-bind="sec:${sec.id}:name" value="${esc(sec.name)}" placeholder="${esc(secLabel(p, i))}" aria-label="${tiers ? 'Option name' : 'Bill heading (printed on the PDF)'}" title="Bill heading: printed exactly like this on the PDF">
       <button class="iconbtn" data-act="secmenu" data-s="${sec.id}" aria-label="Section options">${I.more}</button></div>
     ${tiers ? `<label class="chosen"><input type="radio" name="tier" data-act="tier" data-s="${sec.id}" ${p.selectedTier === sec.id ? 'checked' : ''}> Client approved this option</label>` : ''}
     <div class="sec-b">
@@ -490,13 +511,9 @@ function secCard(p, sec, i) {
         <div>
           <div class="totrow"><span class="muted">Total</span><span class="money" data-calc="sgross:${sec.id}"></span></div>
           <div class="totrow" data-show="disc:${sec.id}"><span class="muted">Discount</span><span class="money" data-calc="sdisc:${sec.id}"></span></div>
-          <div class="totrow net"><span>${tiers ? 'Option total' : secLabel(p, i) + ' total'}</span><span class="money" data-calc="snet:${sec.id}"></span></div>
+          <div class="totrow net"><span>${tiers ? 'Option total' : 'Bill total'}</span><span class="money" data-calc="snet:${sec.id}"></span></div>
         </div>
-        <details><summary class="muted" style="font-size:12.5px;cursor:pointer">PDF wording for this ${tiers ? 'option' : 'bill'}</summary>
-          <div class="stack" style="margin-top:8px">
-            <label class="f">Line on the quotation page (blank = automatic)<input type="text" id="sd_${sec.id}" data-bind="sec:${sec.id}:summaryDesc" value="${esc(sec.summaryDesc)}" placeholder="${esc(secTitle(p, i))}"></label>
-            <label class="f">Sub-heading on the breakdown page<input type="text" id="ss_${sec.id}" data-bind="sec:${sec.id}:subtitle" value="${esc(sec.subtitle)}" placeholder="e.g. Estimated delivery 10 Dec"></label>
-          </div></details>
+        <label class="f">Note under the heading on the breakdown page (optional)<input type="text" id="ss_${sec.id}" data-bind="sec:${sec.id}:subtitle" value="${esc(sec.subtitle)}" placeholder="e.g. Estimated delivery 10 Dec"></label>
       </div>
     </div></section>`;
 }
@@ -871,7 +888,7 @@ ACT.secdup = el => {
 };
 ACT.secdel = el => {
   const p = curP(); const sec = secOf(p, el.dataset.s);
-  confirmBox(p.mode === 'tiers' ? 'Delete this option?' : 'Delete this bill?', `“${secTitle(p, p.sections.indexOf(sec))}” and its ${sec.lines.length} lines will be removed. Later bills move up a letter.`, 'Delete', () => {
+  confirmBox(p.mode === 'tiers' ? 'Delete this option?' : 'Delete this bill?', `“${secTitle(p, p.sections.indexOf(sec))}” and its ${sec.lines.length} lines will be removed.`, 'Delete', () => {
     p.sections = p.sections.filter(s => s.id !== sec.id); if (p.selectedTier === sec.id) p.selectedTier = null; touchP(p); render();
   });
 };
@@ -892,10 +909,48 @@ ACT.docopyrates = el => {
 ACT.pmenu = () => {
   const p = curP();
   openSheet(`<h2>${esc(p.name)}</h2><div class="stack">
+    ${p.groupId && groupMembers(store, p.groupId).length > 1
+      ? `<button class="btn block" data-act="ungroup">Remove from project “${esc(groupName(store, p.groupId))}”</button>`
+      : `<button class="btn block" data-act="groupmenu">Group with another quote (same project)</button>`}
     <button class="btn block" data-act="dup">Duplicate as a new quote</button>
     <button class="btn block" data-act="newrev">Start revision R${p.rev + 1}</button>
     <button class="btn block danger" data-act="delp">Delete quote</button>
     <button class="btn block ghost" data-act="closesheet">Close</button></div>`);
+};
+ACT.groupmenu = () => {
+  const p = curP();
+  const others = store.projects.filter(x => !x.deleted && x.id !== p.id && kindOf(x) === kindOf(p)).sort(SORTS.updated[1]);
+  openSheet(`<h2>Group “${esc(p.name)}” with…</h2>
+    <div class="muted" style="font-size:12.5px">Pick the quote for the same project. Both keep their own numbers, PDFs and payments; the dashboard shows them as one project with a combined total.</div>
+    <input type="search" id="gq" placeholder="Search quotes" data-act-input="gsearch" aria-label="Search quotes">
+    <div id="glist" class="stack" style="max-height:50vh;overflow:auto;gap:0">${groupPickRows(others)}</div>
+    <button class="btn ghost" data-act="closesheet">Cancel</button>`);
+};
+function groupPickRows(list) {
+  return list.map(x => `<div class="list-row" data-act="groupwith" data-id="${x.id}"><div class="grow"><b>${esc(x.groupId && groupMembers(store, x.groupId).length > 1 ? groupName(store, x.groupId) + ' · ' : '')}${esc(x.name)}</b>
+    <small>${esc(quoteNo(store, x))} · ${esc(x.client || '—')} · ${rs(projectValue(x))}</small></div><span class="chev">›</span></div>`).join('') || '<div class="muted">No other quotes.</div>';
+}
+document.addEventListener('input', e => {
+  if (e.target.dataset?.actInput !== 'gsearch') return;
+  const p = curP(); const q = e.target.value.trim().toLowerCase();
+  const others = store.projects.filter(x => !x.deleted && x.id !== p.id && kindOf(x) === kindOf(p) && (!q || (x.name + ' ' + x.client + ' ' + quoteNo(store, x)).toLowerCase().includes(q))).sort(SORTS.updated[1]);
+  const box = document.getElementById('glist'); if (box) box.innerHTML = groupPickRows(others);
+});
+ACT.groupwith = el => {
+  const p = curP(); const t = store.projects.find(x => x.id === el.dataset.id); if (!p || !t) return;
+  const gid = t.groupId && groupMembers(store, t.groupId).length ? t.groupId : t.id;
+  if (t.groupId !== gid) { t.groupId = gid; touchP(t); }
+  // a quote that led its own group brings its group along
+  const old = p.groupId; store.projects.filter(x => !x.deleted && old && x.groupId === old).forEach(x => { x.groupId = gid; touchP(x); });
+  p.groupId = gid;
+  if (!String(p.studioId || '').trim() && t.studioId) p.studioId = t.studioId;
+  touchP(p); closeSheet(); render(); toast(`Grouped under “${groupName(store, gid)}”.`);
+};
+ACT.ungroup = () => {
+  const p = curP(); const gid = p.groupId; const name = groupName(store, gid);
+  p.groupId = null; touchP(p);
+  const rest = groupMembers(store, gid); if (rest.length === 1) { rest[0].groupId = null; touchP(rest[0]); }
+  closeSheet(); render(); toast(`Removed from “${name}”.`);
 };
 ACT.dup = () => { const c = duplicateProject(curP()); persist(); closeSheet(); toast(`Created ${quoteNo(store, c)}.`); go({ name: 'project', id: c.id, kind: ui.kind }); };
 ACT.delp = () => {
@@ -1031,13 +1086,13 @@ ACT.restore = el => {
   const now = nowISO();
   if (el.dataset.v === 'replace') {
     const keep = new Set(data.projects.map(p => p.id));
-    const restored = clone(data.projects).map(p => ({ ...p, updatedAt: now }));
+    const restored = clone(data.projects).map(p => normalizeProject({ ...p, updatedAt: now }));
     const removed = store.projects.filter(p => !keep.has(p.id)).map(p => ({ ...p, deleted: true, updatedAt: now }));
     store = { schema: 1, settings: { ...defaultSettings(), ...clone(data.settings), updatedAt: now }, projects: [...restored, ...removed], meta: store.meta };
     toast(`Restored · ${restored.filter(p => !p.deleted).length} quotes. Syncing to every device…`, 3500);
   } else {
     const have = new Set(store.projects.map(p => p.id));
-    const added = clone(data.projects).filter(p => !have.has(p.id) && !p.deleted).map(p => ({ ...p, updatedAt: now }));
+    const added = clone(data.projects).filter(p => !have.has(p.id) && !p.deleted).map(p => normalizeProject({ ...p, updatedAt: now }));
     store.projects.push(...added);
     toast(added.length ? `Added ${added.length} missing quote${added.length > 1 ? 's' : ''}.` : 'Nothing was missing.');
   }

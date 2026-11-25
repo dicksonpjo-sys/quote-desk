@@ -267,10 +267,8 @@ const QuotePDF = (() => {
     const showMin = p.pdf?.showMinutes !== false;
     ensure(96, kind); ctx.y -= 6;
     const page = cur();
-    const lbl = secLabel(p, i).toUpperCase();
-    txt(page, lbl, ML, ctx.y, { size: 9, bold: true, sp: 1.2 });
-    const lw = width(lbl, 9, true, 1.2);
-    if (p.mode !== 'tiers' && sec.name?.trim()) txt(page, sec.name.trim(), ML + lw + 10, ctx.y, { size: 9, color: MID });
+    // The bill heading exactly as typed (v1.5.0); the position label only when it is empty.
+    txt(page, secTitle(p, i), ML, ctx.y, { size: 9.5, bold: true });
     txt(page, money(secNet(sec)), W - MR, ctx.y, { size: 9.5, bold: true, align: 'right' });
     if (sec.subtitle) { ctx.y -= 12; txt(page, sec.subtitle, ML, ctx.y, { size: 7.6, color: MID }); }
     ctx.y -= 10;
@@ -346,7 +344,7 @@ const QuotePDF = (() => {
       if (showPay) cols.push({ w: 86, head: 'Payment' });
       cols.push({ w: 110, head: 'Amount', align: 'right' });
       const rows = p.sections.map((sec, i) => {
-        const d = sec.summaryDesc || secTitle(p, i);
+        const d = secTitle(p, i);
         const c = [{ t: String(i + 1), color: SOFT }, { t: d }];
         if (showPay) c.push({ pay: sec.pay?.status || 'Pending' });
         c.push({ t: money(secNet(sec)) });

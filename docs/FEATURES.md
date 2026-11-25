@@ -1,4 +1,4 @@
-# VishwaaFX Quote Desk — what it does (v1.4.0)
+# VishwaaFX Quote Desk — what it does (v1.5.0)
 
 Live app: https://dicksonpjo-sys.github.io/quote-desk/
 
@@ -15,6 +15,12 @@ Numbers follow the Indian financial year (April–March) and restart at 001 ever
 
 ## 2. Dashboards
 
+- **Project groups:** quotes for the same film (e.g. Mayan and Mayan (Additional)) show as one project
+  card listing every quote, with a combined total, received and due. Group from a quote's ⋯ menu →
+  "Group with another quote"; undo with "Remove from project". Each quote keeps its own number, PDF
+  and payments.
+- **Sort:** latest updated (default), quote no., quote date, amount, client or status.
+
 - **Summary band:** money to collect, amount quoted and waiting for approval, amount received, and
   quotes expiring within 7 days.
 - **Category tabs** (project quotes): Feature Film, Web Series, Ad Film, Music Video, Corporate, Other.
@@ -26,8 +32,9 @@ Numbers follow the Indian financial year (April–March) and restart at 001 ever
 ## 3. Project quotes
 
 - **Two structures:**
-  - **Initial + additional bills:** Initial Bill, then Additional Bill A, B, C…, each with an optional
-    title such as "Trailer & Teaser".
+  - **Bills:** each bill has one **heading** you type (e.g. "Additional Bill F - 25-11-26"). Exactly
+    that text is used in the app, on page 1 of the PDF and as the breakdown heading. Left empty, the
+    bill shows "Initial Bill", "Additional Bill A"… An optional note can go under the heading.
   - **Quality options:** Premium / Standard side by side. Tick the option the client approved.
 - **Line types:** *per second* (seconds × rate) or *fixed amount*.
 - **Rate memory:** typing a department fills in the last rate you used for it, with the same category

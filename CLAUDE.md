@@ -6,7 +6,7 @@ must not break, and how to test and ship a change.
 - **Owner:** Dickson P Jo (VishwaaFX, Kochi). Talks in short messages; wants to see what you are
   doing as you do it, and to approve anything that changes live data or goes live.
 - **Live app:** https://dicksonpjo-sys.github.io/quote-desk/ (GitHub Pages, `main` branch, root folder)
-- **Current version:** v1.4.1 (`APP_VERSION` in `js/data.js`)
+- **Current version:** v1.5.0 (`APP_VERSION` in `js/data.js`)
 - **Accounts:** studio data owner **vishwaafxacc@gmail.com**; extra users **vishwaafx@gmail.com** and
   **dicksonpjo@gmail.com** (both Editor). Dickson dictates by voice, so emails can arrive misspelt
   ("visualfx", "dixonpjo"); these three are the real ones.
@@ -48,14 +48,18 @@ Project = { id, kind: 'quote'|'supervision', fy: '26-27', seq, rev, name, catego
             date, validDays, status, templateId, mode: 'batches'|'tiers', singlePage, signatoryId, bankId,
             blocks: [NoteBlock copy], sections: [Section], selectedTier, pdf: {title, copyLabel,
             showPayment, showGst, showMinutes, gstText, showSignature}, revisions: [], createdAt,
-            updatedAt, deleted, studioId, lastPdf: {id, name, at} }   // studioId, lastPdf since v1.4.0
+            updatedAt, deleted, studioId, lastPdf: {id, name, at}, groupId }   // studioId, lastPdf v1.4.0; groupId v1.5.0
 Section = { id, name, summaryDesc, subtitle, lines: [Line], discountType: none|final|amount|percent,
             discount, durMode: sum|max|manual, durManual, pay: {status: Pending|Partial|Paid, received, date} }
 Line    = { id, desc, type: 'rate'|'lump', sec, rate, amount, date }   // date used by supervision bills
 ```
 
-- Sections in `batches` mode are labelled by position: **Initial Bill**, then **Additional Bill A, B, C…**
-  (`secLabel`, `billLetter`). The optional `name` is only a title after the label.
+- **Bill heading (v1.5.0):** `sec.name` IS the heading, used as typed in the app, the PDF summary line and
+  the breakdown heading (`secTitle`). The position label **Initial Bill / Additional Bill A, B…**
+  (`secLabel`, `billLetter`) is only the fallback when the heading is empty. `summaryDesc` is retired:
+  `normalizeProject()` moves it into `name` on load, merge and restore (deterministic, no timestamp).
+- **Project groups (v1.5.0):** `p.groupId` = id of the quote the group started from; grouped quotes keep
+  their own numbers, PDFs and payments; the dashboard shows one card (`dashboardItems`, `groupName`).
 - `tiers` mode = quality options (Premium / Standard); `selectedTier` = the option the client approved.
 - Quote number: `prefix/fy/seq` + `-R1` for revisions. Indian financial year, restarts every April.
   Supervision has its own sequence and prefix.
@@ -176,5 +180,7 @@ Run it after any change to `js/sync.js`, `mergeStores` or restore.
   ID per quote, every bill listed under it; options report the approved one only. Studio Console
   prompt written: `docs/STUDIO_CONSOLE_PROMPT.md` (paste into a Studio Console chat; built there as
   v5.18 on top of the live Studio Console v5.17).
+- **v1.5.0 — Bill headings + project groups + sort + compact UI** (25 Nov 2026). Studio Console follow-up
+  prompt: `docs/STUDIO_CONSOLE_PROMPT_v1.5.md` (Approved / In Progress by default, groups, headings).
 - **Later ideas:** Malayalam in PDFs (embedded Unicode font), VFX Edit Tool Kit CSV import, private repo
   (needs GitHub Pro to keep Pages).
